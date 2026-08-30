@@ -1,0 +1,15 @@
+waifucad 0.1
+model ai_bracket
+param width 80 mm
+param depth 50 mm
+param thickness 10 mm
+param boss_radius 8 mm
+param boss_height 22 mm
+box base width depth thickness
+cylinder boss boss_radius boss_height
+set width 96
+recompute
+echo bracket_ready
+
+
+

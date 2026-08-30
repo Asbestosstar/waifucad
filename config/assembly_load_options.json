@@ -1,0 +1,72 @@
+{
+  "version": 2,
+  "status": "design_todo",
+  "default_policy": "load_on_demand",
+  "document_level_policies": [
+    {
+      "id": "fully_loaded",
+      "description": "Load component structure, metadata, exact geometry and editable feature data wherever available."
+    },
+    {
+      "id": "lightweight",
+      "description": "Load structure, transforms, bounds and display tessellation; defer exact B-rep and part history."
+    },
+    {
+      "id": "structure_only",
+      "description": "Load the assembly occurrence tree and essential metadata without component geometry."
+    },
+    {
+      "id": "partial",
+      "description": "Fully load selected components while keeping the remainder lightweight, structure-only or unloaded."
+    },
+    {
+      "id": "load_on_demand",
+      "description": "Start light and promote component data automatically when an operation requires it."
+    }
+  ],
+  "occurrence_states": [
+    "fully_loaded",
+    "lightweight",
+    "structure_only",
+    "deferred",
+    "unloaded",
+    "suppressed"
+  ],
+  "rules": {
+    "suppressed_is_not_unloaded": true,
+    "preserve_occurrence_transform_when_unloaded": true,
+    "preserve_component_identity_across_load_state_changes": true,
+    "journal_load_state_changes": true,
+    "batch_mode_must_be_able_to_force_a_policy": true,
+    "ai_must_not_force_full_load_without_need": true
+  },
+  "selection_overrides": {
+    "recursive_depth": "0 = selected occurrence only; positive values include descendants; -1 means entire selected subtree.",
+    "reference_set": "Optional preferred reference set/representation for a component.",
+    "load_interpart_dependencies": "Whether associative external references may promote referenced components.",
+    "load_pmi": "none, visible, or all PMI payloads.",
+    "load_attributes": "none, essential, or all user/component attributes.",
+    "geometry_preference": "exact, tessellated, bounds_only, or auto.",
+    "stale_proxy_policy": "allow, warn, refresh, or reject.",
+    "memory_budget_mib": "Optional soft memory budget used by partial/load-on-demand policies.",
+    "io_concurrency": "Optional bounded component I/O concurrency; independent from geometry worker count."
+  },
+  "planned_cli": [
+    "--assembly-load POLICY",
+    "--assembly-geometry auto|exact|tessellated|bounds",
+    "--assembly-depth N",
+    "--assembly-memory-mib N",
+    "--assembly-pmi none|visible|all",
+    "--assembly-stale-proxy allow|warn|refresh|reject"
+  ],
+  "promotion_rules": [
+    "Selection/highlight needs only occurrence identity plus a display proxy.",
+    "Measurement may promote to exact geometry only for the measured occurrence(s).",
+    "Editing a component requires editable part history for that component, not the whole assembly.",
+    "Assembly constraints may load only the referenced datums/topology needed by the solver.",
+    "AI inspection must request the lightest representation that can answer the question."
+  ]
+}
+
+
+

@@ -1,0 +1,13 @@
+# Ruby-like WaifuCAD Scripting Language (.wcs)
+waifucad(0.2)
+model(:ruby_style_demo)
+param(:width, 80.mm)
+param(:depth, 50.mm)
+param(:thickness, 10.mm)
+
+sketch(:base_sketch, :XY)
+sketch_rect(:base_profile, :base_sketch, :width, :depth, true)
+extrude(:base_body, :base_profile, :thickness)
+puts("Ruby-style WaifuCAD SCL executed")
+recompute()
+

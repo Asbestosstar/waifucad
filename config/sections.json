@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "default_section": "modelling",
+  "global_ribbon_tabs": ["sections", "mods"],
+  "home_ribbon_groups": ["scripts"],
+  "behaviour": {
+    "section_launcher_tab": "sections",
+    "switch_contextual_ribbon_on_activation": true,
+    "preserve_viewport_and_document_on_switch": true,
+    "section_owns_contextual_ribbon": true
+  },
+  "sections": [
+    {"id": "modelling", "implemented_ribbon": true, "default": true},
+    {"id": "assembly", "implemented_ribbon": false, "status": "planned"},
+    {"id": "pmi", "implemented_ribbon": true, "status": "bootstrap"},
+    {"id": "drawing", "implemented_ribbon": false, "status": "planned"},
+    {"id": "manufacturing", "implemented_ribbon": false, "status": "planned"},
+    {"id": "ai", "implemented_ribbon": false, "status": "planned"},
+    {"id": "journalling", "implemented_ribbon": false, "status": "planned"}
+  ]
+}
+
+
+

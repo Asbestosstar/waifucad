@@ -1,0 +1,30 @@
+# Historical whitespace-form SCL uses the exact same getter implementation.
+model getter_demo_legacy
+param width 40 mm
+param depth 25 mm
+param height 10 mm
+box base width depth height
+translate raised base 0 0 12
+recompute
+get_model_name model_name
+get_parameter_count parameter_count
+get_feature_count feature_count
+get_feature_kind base_kind base
+get_feature_geometry_status base_status base
+get_feature_bounds base_bounds base
+get_feature_volume base_volume base
+echo_value model_name
+echo_value base_kind
+echo_value base_status
+echo_value base_bounds
+echo_value base_volume
+
+# Persistent exact topology IDs are strings, not rebuild-local BRep indices.
+get_feature_persistent_body_id base_body_id base
+get_feature_face_persistent_id base_face0_id base 0
+get_topology_kind base_face0_kind base_face0_id
+get_topology_face_surface_kind base_face0_surface base_face0_id
+echo_value base_body_id
+echo_value base_face0_id
+echo_value base_face0_surface
+

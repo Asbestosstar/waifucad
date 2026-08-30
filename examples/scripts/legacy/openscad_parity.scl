@@ -1,0 +1,85 @@
+waifucad 0.2
+model openscad_parity_demo
+
+var $fn 64
+var $fa 6
+var $fs 0.5
+
+# 2D primitives and extrusion.
+circle c2d 10
+circle_d c2d_diameter 20
+square plate2d 40 25 true
+polygon triangle "0,0;40,0;20,30"
+text label "WAIFUCAD" 8 "Noto Sans"
+linear_extrude plate plate2d 10 0 0 false
+rotate_extrude torus_like c2d 360
+
+# 3D primitives.
+cube block 40 30 12
+cylinder pin 5 30
+cylinder_d pin_diameter 10 30
+sphere ball 8
+sphere_d ball_diameter 16
+frustum taper 10 4 30
+frustum_d taper_diameter 20 8 30
+polyhedron tetra "0,0,0;20,0,0;0,20,0;0,0,20" "0,2,1;0,1,3;1,2,3;2,0,3"
+
+# Transformations and booleans.
+translate moved_pin pin 0 0 6
+rotate tilted moved_pin 0 20 45
+rotate_axis axis_rotated tilted 30 0 1 0
+scale stretched axis_rotated 1 2 1
+resize resized stretched 30 40 50
+mirror mirrored resized 1 0 0
+colour pink mirrored 1 0.2 0.8 0.9
+hull envelope block ball
+minkowski swollen block ball
+union combined block pin
+difference drilled block pin
+intersection overlap block pin
+projection outline block false
+offset expanded_outline outline 2
+offset_r rounded_outline outline 2
+render rendered combined
+highlight highlighted rendered
+
+# Runtime operators, lists and OpenSCAD-style helper functions.
+list a 1 2 3
+list b 4 5 6
+concat both a b
+cross normal a b
+norm vector_length a
+index second both 1
+component z_component a z
+calc doubled second * 2
+ternary chosen doubled 20 10
+math root sqrt doubled
+math trig sin 30
+type_test is_list_result is_list a
+rands random_values 0 1 5 1234
+str message "root=" root " sin30=" trig
+echo_value message
+assert is_list_result "list type test failed"
+
+# Fixed BetterC callable functions/modules.
+function double 1 "calc $result $1 + $1"
+call_function forty_two double 21
+echo_value forty_two
+
+module make_sphere 2 "str generated_name $1 $2;sphere generated_name $2"
+for i 1 1 3 call make_sphere "marker_" i
+
+
+# Side-effect-free library loading, explicit module children and Unicode helpers.
+use examples/scripts/legacy/openscad_library.scl
+call child_passthrough --children block ball
+call_function sixty_three triple 21
+chr unicode_snowman 9731
+ord unicode_snowman_code unicode_snowman
+calc unicode_roundtrip_ok unicode_snowman_code == 9731
+assert unicode_roundtrip_ok "Unicode ord/chr round-trip failed"
+
+recompute
+
+
+

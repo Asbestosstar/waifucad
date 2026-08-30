@@ -1,0 +1,28 @@
+{
+  "id": "nightcore_2008",
+  "ribbon": {
+    "hue": "purplish-pink",
+    "density": "compact",
+    "topChrome": "late_2000s_mmd_inspired"
+  },
+  "background": {
+    "image": "waifus/nightcore.png",
+    "fallback": "assets/themes/nightcore_2008/background.ppm"
+  },
+  "crt": {
+    "enabled": true,
+    "scanlineStrength": 0.12,
+    "maskStrength": 0.08,
+    "bloomStrength": 0.06,
+    "curvature": 0.0
+  },
+  "baselineViewport": {
+    "width": 1024,
+    "height": 768,
+    "aspect": "4:3"
+  },
+  "navigator": {
+    "background": "#171321",
+    "railBackground": "#100D18"
+  }
+}

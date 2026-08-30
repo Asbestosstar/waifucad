@@ -1,0 +1,59 @@
+model p1_parametric_kernel_legacy
+param width 80 mm
+param depth 50 mm
+param_expr half_width mm "width / 2"
+param_expr wall mm "clamp(half_width / 8, 3 mm, 8 mm)"
+param_expr draft_factor unitless "cos(30 deg)"
+param height 20 mm
+datum_csys work_csys 0 0 0 1 0 0 0 1 0
+datum_plane_from_csys work_xy work_csys XY
+datum_plane_from_csys work_xz work_csys XZ
+datum_plane_offset upper_plane work_xy height
+datum_axis_from_csys work_z work_csys Z
+sketch plate_sketch work_xy
+sketch_line plate_l0 plate_sketch 0 0 width 0
+sketch_line plate_l1 plate_sketch width 0 width depth
+sketch_line plate_l2 plate_sketch width depth 0 depth
+sketch_line plate_l3 plate_sketch 0 depth 0 0
+sketch_constraint horizontal plate_h0 plate_sketch plate_l0
+extrude plate plate_sketch wall
+sketch arc_profile_sketch work_xy
+sketch_line arc_diameter arc_profile_sketch 0 -5 0 5
+sketch_arc arc_bulge arc_profile_sketch 0 0 5 90 270
+extrude arc_prism arc_profile_sketch 10
+sketch ring_sketch work_xz
+sketch_polygon ring_profile ring_sketch "10,0;20,0;20,5;10,5"
+revolve_axis ring ring_profile work_z 360
+sketch relation_sketch work_xy
+sketch_line symmetry_axis relation_sketch 0 -10 0 10
+sketch_line symmetric_segment relation_sketch -4 2 4 2
+sketch_circle_at tangent_circle relation_sketch 0 0 5
+sketch_line tangent_line relation_sketch 5 0 5 8
+sketch_constraint symmetry symmetry_relation relation_sketch symmetric_segment symmetry_axis
+sketch_constraint tangent tangent_relation relation_sketch tangent_line 0 tangent_circle
+recompute
+get_parameter_expression formula half_width
+get_datum_frame_origin plane_origin upper_plane
+get_datum_axis_direction z_direction work_z
+get_sketch_constraint_status constraint_status plate_h0
+get_sketch_constraint_residual tangent_residual tangent_relation
+get_sketch_dof relation_dof relation_sketch
+get_sketch_conflicting_constraint_count relation_conflicts relation_sketch
+get_sketch_solve_converged relation_converged relation_sketch
+get_sketch_jacobian_rank relation_rank relation_sketch
+get_sketch_rank_deficiency relation_rank_deficiency relation_sketch
+get_sketch_under_constrained relation_under relation_sketch
+get_feature_exact_genus ring_genus ring
+echo_value formula
+echo_value plane_origin
+echo_value z_direction
+echo_value constraint_status
+echo_value tangent_residual
+echo_value relation_dof
+echo_value relation_conflicts
+echo_value relation_converged
+echo_value relation_rank
+echo_value relation_rank_deficiency
+echo_value relation_under
+echo_value ring_genus
+

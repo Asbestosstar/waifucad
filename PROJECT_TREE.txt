@@ -1,0 +1,667 @@
+# WaifuCAD project tree
+
+Generated from the current source tree by `./make_todos.sh`. Build outputs and generated AI context are excluded.
+
+.gitignore
+AGENTS.MD
+HANDOFF_PROMPT.md
+LICENCE-NOTICE.md
+README.md
+assets/icons/README.md
+assets/icons/cmd_arc.svg
+assets/icons/cmd_chamfer.svg
+assets/icons/cmd_circle.svg
+assets/icons/cmd_command.svg
+assets/icons/cmd_datum_axis.svg
+assets/icons/cmd_datum_csys.svg
+assets/icons/cmd_datum_plane.svg
+assets/icons/cmd_export_scad.svg
+assets/icons/cmd_extrude.svg
+assets/icons/cmd_fillet.svg
+assets/icons/cmd_finish_sketch.svg
+assets/icons/cmd_import_body.svg
+assets/icons/cmd_import_scad.svg
+assets/icons/cmd_intersect.svg
+assets/icons/cmd_line.svg
+assets/icons/cmd_loft.svg
+assets/icons/cmd_mass.svg
+assets/icons/cmd_measure.svg
+assets/icons/cmd_pmi_angular.svg
+assets/icons/cmd_pmi_balloon.svg
+assets/icons/cmd_pmi_datum.svg
+assets/icons/cmd_pmi_diameter.svg
+assets/icons/cmd_pmi_export.svg
+assets/icons/cmd_pmi_fcf.svg
+assets/icons/cmd_pmi_general_note.svg
+assets/icons/cmd_pmi_import.svg
+assets/icons/cmd_pmi_linear.svg
+assets/icons/cmd_pmi_note.svg
+assets/icons/cmd_pmi_plane.svg
+assets/icons/cmd_pmi_quick_dimension.svg
+assets/icons/cmd_pmi_radial.svg
+assets/icons/cmd_pmi_show.svg
+assets/icons/cmd_pmi_surface.svg
+assets/icons/cmd_pmi_validate.svg
+assets/icons/cmd_pmi_weld.svg
+assets/icons/cmd_record.svg
+assets/icons/cmd_rectangle.svg
+assets/icons/cmd_revolve.svg
+assets/icons/cmd_script.svg
+assets/icons/cmd_shell.svg
+assets/icons/cmd_sketch.svg
+assets/icons/cmd_spline.svg
+assets/icons/cmd_subtract.svg
+assets/icons/cmd_sweep.svg
+assets/icons/cmd_union.svg
+assets/icons/nav_ai.svg
+assets/icons/nav_assembly.svg
+assets/icons/nav_model.svg
+assets/icons/tab_analysis.svg
+assets/icons/tab_curve.svg
+assets/icons/tab_dimensions.svg
+assets/icons/tab_exchange.svg
+assets/icons/tab_gdt.svg
+assets/icons/tab_home.svg
+assets/icons/tab_mods.svg
+assets/icons/tab_notes.svg
+assets/icons/tab_pmi.svg
+assets/icons/tab_surface.svg
+assets/icons/tab_tools.svg
+assets/icons/waifucad.svg
+assets/locales/en_GB.json
+assets/locales/es_ES.json
+assets/locales/ja_JP.json
+assets/shaders/crt_glsl120.frag
+assets/shaders/crt_glsl450.frag
+assets/shaders/crt_metal.metal
+assets/themes/nightcore_2008/README.md
+assets/themes/nightcore_2008/background.ppm
+assets/themes/nightcore_2008/layout_1024x768.json
+assets/themes/nightcore_2008/ui_tokens.json
+build.sh
+build/arch/README.md
+build/arch/riscv64-linux.sh
+build/compiler.sh
+build/os/aix.sh
+build/os/bsd-family.sh
+build/os/haiku.sh
+build/os/hpux.sh
+build/os/illumos.sh
+build/os/irix.sh
+build/os/linux.sh
+build/os/macos.sh
+build/os/openserver10.sh
+build/os/openvms.sh
+build/os/solaris.sh
+build/os/tru64.sh
+build/os/webassembly.sh
+build/os/zos.sh
+config/architectures.json
+config/assembly_load_options.json
+config/concurrency.json
+config/gui.json
+config/input.json
+config/modelling_policy.json
+config/openscad_interchange.json
+config/openscad_parity.json
+config/scl_getters.json
+config/sections.json
+config/targets.json
+config/theme.json
+docs/AI_MODEL_INSPECTION.md
+docs/ARCHITECTURE.md
+docs/ASSEMBLIES.md
+docs/BREP.md
+docs/FEATURE_DIALOGUES.md
+docs/GUI.md
+docs/MODELLING_WORKFLOWS.md
+docs/MULTICORE.md
+docs/OPENSCAD_INTERCHANGE.md
+docs/OPENSCAD_PARITY.md
+docs/PARAMETRIC_FOUNDATION.md
+docs/PORTING.md
+docs/SECTIONS.md
+docs/TARGET_MATRIX.md
+examples/openscad/external_import_demo.scad
+examples/scripts/bracket.wcs
+examples/scripts/brep_box.wcs
+examples/scripts/brep_cylinder.wcs
+examples/scripts/legacy/README.md
+examples/scripts/legacy/bracket.scl
+examples/scripts/legacy/brep_box.scl
+examples/scripts/legacy/brep_cylinder.scl
+examples/scripts/legacy/model_getters.scl
+examples/scripts/legacy/multicore_features.scl
+examples/scripts/legacy/nx_style_workflow.scl
+examples/scripts/legacy/openscad_interchange.scl
+examples/scripts/legacy/openscad_library.scl
+examples/scripts/legacy/openscad_parity.scl
+examples/scripts/legacy/p1_parametric_kernel.scl
+examples/scripts/legacy/pmi_journal.scl
+examples/scripts/model_getters.wcs
+examples/scripts/multicore_features.wcs
+examples/scripts/nx_style_workflow.wcs
+examples/scripts/openscad_interchange.wcs
+examples/scripts/openscad_library.wcs
+examples/scripts/openscad_parity.wcs
+examples/scripts/p1_parametric_kernel.wcs
+examples/scripts/pmi_journal.wcs
+examples/scripts/ruby_style.wcs
+journals/README.md
+make_todos.sh
+mods/README.md
+native/files/wc_temp.h
+native/files/wc_temp_posix.c
+native/graphics/wc_gpu_probe.c
+native/graphics/wc_gpu_probe.h
+native/gui/gtk4/wc_gtk4.c
+native/gui/gtk4/wc_gtk4.h
+native/gui/gtk4/wc_gtk4_stub.c
+native/threads/wc_threads.h
+native/threads/wc_threads_posix.c
+native/threads/wc_threads_single.c
+ports/arch/aarch64/README.md
+ports/arch/alpha64/README.md
+ports/arch/ia64/README.md
+ports/arch/mips64/README.md
+ports/arch/parisc64/README.md
+ports/arch/ppc64/README.md
+ports/arch/ppc64le/README.md
+ports/arch/riscv64/README.md
+ports/arch/s390x/README.md
+ports/arch/sparc64/README.md
+ports/arch/tilegx/README.md
+ports/arch/wasm64/README.md
+ports/arch/x86_64/README.md
+ports/gpu_stack/amd/README.md
+ports/gpu_stack/apple-metal/README.md
+ports/gpu_stack/headless/README.md
+ports/gpu_stack/intel/README.md
+ports/gpu_stack/lavapipe/README.md
+ports/gpu_stack/legacy-opengl/README.md
+ports/gpu_stack/mesa/README.md
+ports/gpu_stack/nvidia/README.md
+ports/gui_frontend/gtk1/README.md
+ports/gui_frontend/gtk2/README.md
+ports/gui_frontend/gtk3/README.md
+ports/gui_frontend/gtk4/README.md
+ports/gui_frontend/motif/README.md
+ports/gui_frontend/qt2/README.md
+ports/gui_frontend/qt3/README.md
+ports/gui_frontend/qt4/README.md
+ports/gui_frontend/qt5/README.md
+ports/gui_frontend/qt6/README.md
+ports/gui_frontend/xlib/README.md
+ports/os/aix/README.md
+ports/os/aix/build.sh
+ports/os/bsd-family/README.md
+ports/os/bsd-family/build.sh
+ports/os/haiku/README.md
+ports/os/haiku/build.sh
+ports/os/hpux/README.md
+ports/os/hpux/build.sh
+ports/os/illumos/README.md
+ports/os/illumos/build.sh
+ports/os/irix/README.md
+ports/os/irix/build.sh
+ports/os/linux/README.md
+ports/os/linux/build.sh
+ports/os/macos/README.md
+ports/os/macos/build.sh
+ports/os/openserver10/README.md
+ports/os/openserver10/build.sh
+ports/os/openvms/README.md
+ports/os/openvms/build.sh
+ports/os/solaris/README.md
+ports/os/solaris/build.sh
+ports/os/tru64/README.md
+ports/os/tru64/build.sh
+ports/os/webassembly/README.md
+ports/os/webassembly/build.sh
+ports/os/zos/README.md
+ports/os/zos/build.sh
+scripts/README.md
+sdk/waifucad_mod_api.h
+sections/README.md
+src/apps/waifucad_batch.d
+src/apps/waifucad_gui.d
+src/waifucad/ai/protocol.d
+src/waifucad/brep/README.md
+src/waifucad/brep/advanced.d
+src/waifucad/brep/builder.d
+src/waifucad/brep/classification.d
+src/waifucad/brep/debug.d
+src/waifucad/brep/dump.d
+src/waifucad/brep/euler.d
+src/waifucad/brep/geometry.d
+src/waifucad/brep/intersections.d
+src/waifucad/brep/kernel.d
+src/waifucad/brep/naming.d
+src/waifucad/brep/properties.d
+src/waifucad/brep/tolerance.d
+src/waifucad/brep/transform.d
+src/waifucad/brep/types.d
+src/waifucad/brep/validate.d
+src/waifucad/core/fixed_string.d
+src/waifucad/core/jobs.d
+src/waifucad/core/log.d
+src/waifucad/core/platform_bits.d
+src/waifucad/graphics/api.d
+src/waifucad/graphics/backends/metal/README.md
+src/waifucad/graphics/backends/opengl/README.md
+src/waifucad/graphics/backends/vulkan/README.md
+src/waifucad/graphics/selector.d
+src/waifucad/gui/api.d
+src/waifucad/gui/command_console.d
+src/waifucad/gui/feature_dialogues.d
+src/waifucad/gui/frontends/gtk1/README.md
+src/waifucad/gui/frontends/gtk1/frontend.d
+src/waifucad/gui/frontends/gtk2/README.md
+src/waifucad/gui/frontends/gtk2/frontend.d
+src/waifucad/gui/frontends/gtk3/README.md
+src/waifucad/gui/frontends/gtk3/frontend.d
+src/waifucad/gui/frontends/gtk4/README.md
+src/waifucad/gui/frontends/gtk4/frontend.d
+src/waifucad/gui/frontends/motif/README.md
+src/waifucad/gui/frontends/motif/frontend.d
+src/waifucad/gui/frontends/qt2/README.md
+src/waifucad/gui/frontends/qt2/frontend.d
+src/waifucad/gui/frontends/qt3/README.md
+src/waifucad/gui/frontends/qt3/frontend.d
+src/waifucad/gui/frontends/qt4/README.md
+src/waifucad/gui/frontends/qt4/frontend.d
+src/waifucad/gui/frontends/qt5/README.md
+src/waifucad/gui/frontends/qt5/frontend.d
+src/waifucad/gui/frontends/qt6/README.md
+src/waifucad/gui/frontends/qt6/frontend.d
+src/waifucad/gui/frontends/xlib/README.md
+src/waifucad/gui/frontends/xlib/frontend.d
+src/waifucad/gui/navigation.d
+src/waifucad/gui/ribbon_actions.d
+src/waifucad/gui/ribbon_host.d
+src/waifucad/gui/selector.d
+src/waifucad/gui/theme.d
+src/waifucad/interchange/openscad/exporter.d
+src/waifucad/interchange/openscad/importer.d
+src/waifucad/interchange/openscad/options.d
+src/waifucad/interchange/openscad/roundtrip.d
+src/waifucad/journal/backend_api.d
+src/waifucad/journal/backends/crystal/README.md
+src/waifucad/journal/backends/crystal/backend.d
+src/waifucad/journal/backends/groovy/README.md
+src/waifucad/journal/backends/groovy/backend.d
+src/waifucad/journal/backends/java/README.md
+src/waifucad/journal/backends/java/backend.d
+src/waifucad/journal/backends/ruby/README.md
+src/waifucad/journal/backends/ruby/backend.d
+src/waifucad/journal/backends/scl/README.md
+src/waifucad/journal/backends/scl/backend.d
+src/waifucad/journal/journal.d
+src/waifucad/journal/script_runtime.d
+src/waifucad/kernel/backend_api.d
+src/waifucad/kernel/builtin_preview.d
+src/waifucad/kernel/datums.d
+src/waifucad/kernel/expressions.d
+src/waifucad/kernel/model.d
+src/waifucad/kernel/profiles.d
+src/waifucad/kernel/sketch_nonlinear.d
+src/waifucad/kernel/sketch_solver.d
+src/waifucad/kernel/types.d
+src/waifucad/kernel/waifubrep_backend.d
+src/waifucad/mesh/README.md
+src/waifucad/mesh/off_io.d
+src/waifucad/mesh/payload_io.d
+src/waifucad/mesh/tessellate.d
+src/waifucad/mesh/tessellate_brep.d
+src/waifucad/mesh/types.d
+src/waifucad/mods/api.d
+src/waifucad/platform/capabilities.d
+src/waifucad/platform/target.d
+src/waifucad/platform/temp_files.d
+src/waifucad/scl/GRAMMAR.md
+src/waifucad/scl/getters.d
+src/waifucad/scl/interpreter.d
+src/waifucad/scl/repl.d
+src/waifucad/scl/ruby_syntax.d
+src/waifucad/scl/runtime_ops.d
+src/waifucad/scl/tokenise.d
+src/waifucad/scripts/runner.d
+src/waifucad/sections/api.d
+src/waifucad/sections/assembly/README.md
+src/waifucad/sections/context.d
+src/waifucad/sections/modelling/README.md
+src/waifucad/sections/modelling/section.d
+src/waifucad/sections/pmi/README.md
+src/waifucad/sections/pmi/section.d
+src/waifucad/sections/pmi/store.d
+src/waifucad/sections/pmi/types.d
+src/waifucad/sections/registry.d
+src/waifucad/sections/ribbon.d
+tests/ai_protocol_static.py
+tests/brep_analytic.d
+tests/brep_analytic.sh
+tests/brep_box.d
+tests/brep_box.sh
+tests/brep_classification_static.py
+tests/brep_cylinder.d
+tests/brep_cylinder.sh
+tests/brep_naming.d
+tests/brep_naming.sh
+tests/brep_naming_static.py
+tests/brep_p1_advanced.d
+tests/brep_p1_advanced.sh
+tests/build_link_flags.sh
+tests/d_parser_hazards.py
+tests/d_semantic_compat.py
+tests/expression_p1.d
+tests/expression_p1.sh
+tests/expression_p1_static.py
+tests/feature_dialogue_edit.wcs
+tests/feature_dialogues_static.py
+tests/getters_static.py
+tests/gpu_probe.c
+tests/gpu_probe.sh
+tests/gtk4_frontend_static.py
+tests/gtk4_native_syntax.sh
+tests/gui_build_link_flags.sh
+tests/make_todos_waifu_index.py
+tests/mixed_profile_static.py
+tests/model_history_edit.wcs
+tests/native_temp_files.c
+tests/native_temp_files.sh
+tests/native_threads.sh
+tests/openscad_cli_probe.sh
+tests/openscad_interchange_static.py
+tests/openscad_parity.sh
+tests/p1_modelling_kernel_static.py
+tests/pmi_scl_static.py
+tests/portability_layout.sh
+tests/scheduler_static.py
+tests/scl_ruby_syntax.d
+tests/scl_ruby_syntax.sh
+tests/sections_static.py
+tests/sketch_jacobian_static.py
+tests/sketch_solver_p1.d
+tests/sketch_solver_p1.sh
+tests/sketch_solver_static.py
+tests/smoke.sh
+tests/thread_pool_c.c
+tests/validate_target_manifests.py
+tests/wcs_extension_policy.py
+waifus/2.png
+waifus/README.md
+waifus/amane_kanata.png
+waifus/anya_nyabyss.png
+waifus/atlogs.png
+waifus/bad_screen_perf.png
+waifus/bandera_arabia.png
+waifus/bandera_brasil.png
+waifus/bandera_burkina_faso.png
+waifus/bandera_camboya.png
+waifus/bandera_china.png
+waifus/bandera_corea.png
+waifus/bandera_esperanto.png
+waifus/bandera_indonesia.png
+waifus/bandera_inglaterra.png
+waifus/bandera_iran.png
+waifus/bandera_japon.png
+waifus/bandera_laos.png
+waifus/bandera_majnovschina.png
+waifus/bandera_malasia.png
+waifus/bandera_mexico.png
+waifus/bandera_rusia.png
+waifus/bandera_suajili.png
+waifus/bandera_tailandia.png
+waifus/bandera_vietnam.png
+waifus/battly.png
+waifus/boton_actualizar.png
+waifus/boton_agregar.png
+waifus/boton_archivos.png
+waifus/boton_cdmods.png
+waifus/boton_compartir.png
+waifus/boton_compartir_icon.png
+waifus/boton_config.png
+waifus/campo.png
+waifus/cd_chars.png
+waifus/cd_logo.png
+waifus/cfskiplauncher.png
+waifus/check.png
+waifus/chiiaru.png
+waifus/chiiaru_v2.png
+waifus/clase.png
+waifus/clase_ipc.png
+waifus/clio.png
+waifus/cliosoffice.png
+waifus/consola_bajar.png
+waifus/consola_logs.png
+waifus/consola_stop.png
+waifus/count_binface.png
+waifus/cpusample.png
+waifus/demonslayers.png
+waifus/doodlebob.png
+waifus/dprk.png
+waifus/edps.png
+waifus/einelotta.png
+waifus/einelotta_original.png
+waifus/eon_of_stars.png
+waifus/exportar.png
+waifus/fenix.png
+waifus/fifa_iran.png
+waifus/fpsreducer.png
+waifus/gc.png
+waifus/gdconfig.png
+waifus/gdconsola.png
+waifus/gomix.png
+waifus/gura.png
+waifus/hamu.png
+waifus/hcml.png
+waifus/heapdump.png
+waifus/holostars_en.png
+waifus/hs_err.png
+waifus/ike_eveland.png
+waifus/illythedizzy.png
+waifus/immersiveportalspixelprotect.png
+waifus/immersiveportalstick.png
+waifus/importar.png
+waifus/ironmouse.png
+waifus/jelly_stara.png
+waifus/jkt48v.png
+waifus/kiara_ame.png
+waifus/kimjongun.png
+waifus/kubejsperf.png
+waifus/logo_crashassistant.png
+waifus/logo_crashreporter.png
+waifus/luotianyi.png
+waifus/maid_mint.png
+waifus/manifest.json
+waifus/mausleepsvt.png
+waifus/mcreatorperf.png
+waifus/metodo.png
+waifus/minaly_xo.png
+waifus/minaly_xo_original.png
+waifus/minecraftserver.png
+waifus/miwa.png
+waifus/mod.png
+waifus/momose_nina.png
+waifus/motherv3.png
+waifus/nanashi_mumei.png
+waifus/nightcore.png
+waifus/nimuspacecat.png
+waifus/niwa.png
+waifus/onepeice.png
+waifus/optimus_prime.png
+waifus/padoru.gif
+waifus/panko.png
+waifus/paquete.png
+waifus/parallel_artist_project.png
+waifus/ppc_jp.png
+waifus/profeco.jpg
+waifus/referencia_campo.png
+waifus/referencia_metodo.png
+waifus/registros_de_lanzar.png
+waifus/registros_de_launcher_prism.png
+waifus/rei_bubbles.png
+waifus/rima_evenstar.png
+waifus/rosemi.png
+waifus/saba.png
+waifus/sabalifecruel.png
+waifus/sakura_riddle.png
+waifus/sakura_riddle_original.png
+waifus/salior_moon_skin.png
+waifus/saliormoongrep.png
+waifus/sao.png
+waifus/shion.png
+waifus/sketchyvt.png
+waifus/sketchyvt_original.png
+waifus/square.png
+waifus/studyjuche.png
+waifus/sylent_bell.png
+waifus/threads.png
+waifus/threads.png.png
+waifus/tlguard.png
+waifus/vainillalanzer.png
+waifus/vallure.png
+waifus/vshojo.png
+waifus/wendy_mizumi.png
+waifus/wilhelmia_frost.png
+waifus/xaero.png
+waifus/yumeiri_reyu.png
+waifus/yunenoms.png
+
+## Waifu PNG index
+
+- waifus/2.png — 32 × 32
+- waifus/amane_kanata.png — 124 × 268
+- waifus/anya_nyabyss.png — 238 × 242
+- waifus/atlogs.png — 644 × 394
+- waifus/bad_screen_perf.png — 1280 × 1024
+- waifus/bandera_arabia.png — 24 × 16
+- waifus/bandera_brasil.png — 24 × 16
+- waifus/bandera_burkina_faso.png — 24 × 16
+- waifus/bandera_camboya.png — 24 × 16
+- waifus/bandera_china.png — 24 × 16
+- waifus/bandera_corea.png — 24 × 16
+- waifus/bandera_esperanto.png — 24 × 16
+- waifus/bandera_indonesia.png — 24 × 16
+- waifus/bandera_inglaterra.png — 24 × 16
+- waifus/bandera_iran.png — 24 × 16
+- waifus/bandera_japon.png — 24 × 16
+- waifus/bandera_laos.png — 24 × 16
+- waifus/bandera_majnovschina.png — 24 × 16
+- waifus/bandera_malasia.png — 24 × 16
+- waifus/bandera_mexico.png — 24 × 16
+- waifus/bandera_rusia.png — 24 × 16
+- waifus/bandera_suajili.png — 24 × 16
+- waifus/bandera_tailandia.png — 24 × 16
+- waifus/bandera_vietnam.png — 24 × 16
+- waifus/battly.png — 500 × 69
+- waifus/boton_actualizar.png — 64 × 64
+- waifus/boton_agregar.png — 64 × 64
+- waifus/boton_archivos.png — 64 × 64
+- waifus/boton_cdmods.png — 64 × 64
+- waifus/boton_compartir.png — 64 × 64
+- waifus/boton_compartir_icon.png — 24 × 24
+- waifus/boton_config.png — 64 × 64
+- waifus/campo.png — 16 × 16
+- waifus/cd_chars.png — 24 × 16
+- waifus/cd_logo.png — 100 × 50
+- waifus/cfskiplauncher.png — 649 × 504
+- waifus/check.png — 32 × 32
+- waifus/chiiaru.png — 293 × 406
+- waifus/chiiaru_v2.png — 240 × 415
+- waifus/clase.png — 16 × 16
+- waifus/clase_ipc.png — 32 × 32
+- waifus/clio.png — 268 × 268
+- waifus/cliosoffice.png — 895 × 571
+- waifus/consola_bajar.png — 32 × 32
+- waifus/consola_logs.png — 32 × 32
+- waifus/consola_stop.png — 32 × 32
+- waifus/count_binface.png — 32 × 32
+- waifus/cpusample.png — 561 × 223
+- waifus/demonslayers.png — 1024 × 1024
+- waifus/doodlebob.png — 256 × 256
+- waifus/dprk.png — 500 × 600
+- waifus/edps.png — 124 × 122
+- waifus/einelotta.png — 101 × 179
+- waifus/einelotta_original.png — 145 × 250
+- waifus/eon_of_stars.png — 227 × 132
+- waifus/exportar.png — 32 × 32
+- waifus/fenix.png — 922 × 214
+- waifus/fifa_iran.png — 234 × 145
+- waifus/fpsreducer.png — 876 × 98
+- waifus/gc.png — 32 × 32
+- waifus/gdconfig.png — 313 × 223
+- waifus/gdconsola.png — 748 × 240
+- waifus/gomix.png — 250 × 121
+- waifus/gura.png — 200 × 112
+- waifus/hamu.png — 400 × 100
+- waifus/hcml.png — 959 × 491
+- waifus/heapdump.png — 32 × 32
+- waifus/holostars_en.png — 234 × 136
+- waifus/hs_err.png — 32 × 32
+- waifus/ike_eveland.png — 191 × 291
+- waifus/illythedizzy.png — 192 × 133
+- waifus/immersiveportalspixelprotect.png — 973 × 471
+- waifus/immersiveportalstick.png — 970 × 336
+- waifus/importar.png — 32 × 32
+- waifus/ironmouse.png — 300 × 167
+- waifus/jelly_stara.png — 120 × 217
+- waifus/jkt48v.png — 227 × 132
+- waifus/kiara_ame.png — 896 × 504
+- waifus/kimjongun.png — 192 × 192
+- waifus/kubejsperf.png — 956 × 210
+- waifus/logo_crashassistant.png — 100 × 26
+- waifus/logo_crashreporter.png — 75 × 35
+- waifus/luotianyi.png — 107 × 168
+- waifus/maid_mint.png — 204 × 266
+- waifus/mausleepsvt.png — 213 × 281
+- waifus/mcreatorperf.png — 903 × 70
+- waifus/metodo.png — 16 × 16
+- waifus/minaly_xo.png — 126 × 180
+- waifus/minaly_xo_original.png — 150 × 245
+- waifus/minecraftserver.png — 500 × 69
+- waifus/miwa.png — 194 × 259
+- waifus/mod.png — 16 × 16
+- waifus/momose_nina.png — 150 × 192
+- waifus/motherv3.png — 135 × 219
+- waifus/nanashi_mumei.png — 200 × 112
+- waifus/nightcore.png — 200 × 150
+- waifus/nimuspacecat.png — 207 × 268
+- waifus/niwa.png — 198 × 273
+- waifus/onepeice.png — 429 × 268
+- waifus/optimus_prime.png — 200 × 225
+- waifus/panko.png — 326 × 434
+- waifus/paquete.png — 16 × 16
+- waifus/parallel_artist_project.png — 234 × 145
+- waifus/ppc_jp.png — 124 × 50
+- waifus/referencia_campo.png — 16 × 16
+- waifus/referencia_metodo.png — 16 × 16
+- waifus/registros_de_lanzar.png — 500 × 96
+- waifus/registros_de_launcher_prism.png — 500 × 200
+- waifus/rei_bubbles.png — 210 × 210
+- waifus/rima_evenstar.png — 194 × 268
+- waifus/rosemi.png — 200 × 112
+- waifus/saba.png — 174 × 289
+- waifus/sabalifecruel.png — 721 × 49
+- waifus/sakura_riddle.png — 315 × 496
+- waifus/sakura_riddle_original.png — 151 × 268
+- waifus/salior_moon_skin.png — 84 × 186
+- waifus/saliormoongrep.png — 150 × 100
+- waifus/sao.png — 244 × 338
+- waifus/shion.png — 200 × 112
+- waifus/sketchyvt.png — 398 × 397
+- waifus/sketchyvt_original.png — 100 × 169
+- waifus/square.png — 32 × 32
+- waifus/studyjuche.png — 145 × 191
+- waifus/sylent_bell.png — 137 × 207
+- waifus/threads.png — 965 × 360
+- waifus/threads.png.png — 961 × 436
+- waifus/tlguard.png — 92 × 92
+- waifus/vainillalanzer.png — 687 × 174
+- waifus/vallure.png — 200 × 164
+- waifus/vshojo.png — 111 × 90
+- waifus/wendy_mizumi.png — 200 × 223
+- waifus/wilhelmia_frost.png — 200 × 349
+- waifus/xaero.png — 976 × 413
+- waifus/yumeiri_reyu.png — 273 × 273
+- waifus/yunenoms.png — 135 × 217

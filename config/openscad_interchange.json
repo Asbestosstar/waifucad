@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "policy": {
+    "import_result": "dumb_mesh_body",
+    "export_result": "polyhedron_dumb_body",
+    "reconstruct_parametric_history": false,
+    "preferred_native_workflow": "sketch_then_extrude_revolve_sweep_or_loft"
+  },
+  "import": {
+    "engines": [
+      "auto",
+      "internal",
+      "external"
+    ],
+    "external_evaluator": "OpenSCAD CLI",
+    "external_mesh_bridge": "OFF",
+    "backends": [
+      "auto",
+      "manifold",
+      "cgal"
+    ],
+    "options": [
+      "executable",
+      "backend",
+      "fn",
+      "fa",
+      "fs",
+      "convexity",
+      "unit_scale",
+      "weld_tolerance",
+      "max_vertices",
+      "max_triangles",
+      "centre_on_origin",
+      "reverse_winding",
+      "triangulate_polygons",
+      "drop_degenerate_triangles",
+      "require_closed_mesh",
+      "hard_warnings",
+      "check_parameters",
+      "check_parameter_ranges",
+      "force_render",
+      "keep_temporary_files",
+      "temporary_directory",
+      "preserve_source_path",
+      "parameter_file",
+      "parameter_set",
+      "defines",
+      "dependency_file",
+      "make_command",
+      "library_path",
+      "font_path",
+      "quiet"
+    ],
+    "internal_engine_scope": "WaifuCAD polyhedron-only SCAD round-trip files",
+    "external_engine_scope": "arbitrary OpenSCAD source supported by the installed OpenSCAD evaluator"
+  },
+  "export": {
+    "format": "OpenSCAD .scad",
+    "geometry_form": "polyhedron(points, faces)",
+    "scopes": [
+      "named_feature",
+      "all_dumb_bodies",
+      "all_bodies"
+    ],
+    "fallbacks": [
+      "reject",
+      "bounding_box"
+    ],
+    "options": [
+      "fn",
+      "fa",
+      "fs",
+      "minimum_segments",
+      "maximum_segments",
+      "precision",
+      "convexity",
+      "unit_scale",
+      "reverse_winding",
+      "centre_each_body",
+      "emit_header",
+      "emit_statistics",
+      "emit_source_names",
+      "emit_resolution_variables",
+      "emit_round_trip_metadata",
+      "one_module_per_body",
+      "wrap_in_render"
+    ],
+    "round_trip_metadata": [
+      "wc-body-begin",
+      "wc-vertex",
+      "wc-triangle",
+      "wc-body-end"
+    ]
+  }
+}
+
+
+

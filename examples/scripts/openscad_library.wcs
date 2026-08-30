@@ -1,0 +1,7 @@
+# Ruby-like WaifuCAD Scripting Language (.wcs)
+# require() must load these definitions without executing the top-level sphere.
+sphere(:use_side_effect_must_not_exist, 999.mm)
+
+module(:child_passthrough, 0, "children library_child")
+def(:triple, 1, "calc doubled $1 + $1;calc $result doubled + $1")
+

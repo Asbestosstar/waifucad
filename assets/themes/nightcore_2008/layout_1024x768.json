@@ -1,0 +1,78 @@
+{
+  "baseline": {
+    "width": 1024,
+    "height": 768
+  },
+  "regions": [
+    {
+      "id": "menu",
+      "x": 0,
+      "y": 0,
+      "width": 1024,
+      "height": 24
+    },
+    {
+      "id": "sectionsRibbon",
+      "x": 0,
+      "y": 24,
+      "width": 1024,
+      "height": 82
+    },
+    {
+      "id": "resourceBar",
+      "x": 0,
+      "y": 106,
+      "width": 42,
+      "height": 636
+    },
+    {
+      "id": "navigator",
+      "x": 42,
+      "y": 106,
+      "width": 208,
+      "height": 636
+    },
+    {
+      "id": "viewport",
+      "x": 250,
+      "y": 106,
+      "width": 774,
+      "height": 610
+    },
+    {
+      "id": "status",
+      "x": 250,
+      "y": 716,
+      "width": 774,
+      "height": 26
+    }
+  ],
+  "ribbon": {
+    "globalTabs": [
+      "Sections",
+      "Mods",
+      "Scripts"
+    ],
+    "sectionLauncher": [
+      "Modelling",
+      "Assembly",
+      "PMI",
+      "Drawing",
+      "Manufacturing",
+      "AI",
+      "Journalling"
+    ],
+    "defaultSection": "Modelling",
+    "contextualRibbonSwitchesWithSection": true,
+    "compactAtWidth": 1024,
+    "allowOverflow": true
+  },
+  "viewport": {
+    "keyboardPan": "WASD",
+    "mouseOrbit": "MiddleMouseDrag",
+    "mousePan": "Shift+MiddleMouseDrag",
+    "zoom": "Wheel"
+  }
+}
+
+

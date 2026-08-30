@@ -1,0 +1,13 @@
+waifucad 0.1
+model pmi_journal_demo
+
+box base 80 50 10
+pmi_add note finish_note "BREAK SHARP EDGES" base 0 0
+pmi_add linear_dimension width_dim "80 mm" base 0 0
+pmi_text finish_note "BREAK SHARP EDGES 0.2 MAX"
+pmi_visible width_dim false
+pmi_visible width_dim true
+recompute
+
+
+

@@ -1,0 +1,8 @@
+# Ruby-like WaifuCAD Scripting Language (.wcs)
+waifucad(0.1)
+model(:brep_cylinder)
+param(:radius, 8.mm)
+param(:height, 22.mm)
+cylinder(:body, :radius, :height)
+recompute()
+

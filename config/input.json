@@ -1,0 +1,18 @@
+{
+  "scheme": "nx_inspired_wasd",
+  "viewport": {
+    "panForward": "W",
+    "panLeft": "A",
+    "panBackward": "S",
+    "panRight": "D",
+    "orbit": "MiddleMouseDrag",
+    "panMouse": "Shift+MiddleMouseDrag",
+    "zoom": "Wheel",
+    "fitView": "F",
+    "cancel": "Escape"
+  },
+  "notes": "WASD pans the camera parallel to the current view plane. Text fields take keyboard focus and suppress viewport WASD."
+}
+
+
+

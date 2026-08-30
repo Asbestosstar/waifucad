@@ -1,0 +1,23 @@
+# Ruby-like WaifuCAD Scripting Language (.wcs)
+waifucad(0.2)
+model(:nx_style_workflow)
+
+param(:width, 80.mm)
+param(:depth, 50.mm)
+param(:thickness, 10.mm)
+
+# Preferred modelling route: sketch -> feature.
+sketch(:base_sketch, :XY)
+sketch_rect(:base_profile, :base_sketch, :width, :depth, true)
+extrude(:base_body, :base_profile, :thickness)
+
+# Legal NX-style rough geometry outside a sketch.
+line(:rough_axis, 0, 0, 0, 0, 0, 100.mm)
+arc(:rough_reference, 20.mm, 10.mm, 0, 15.mm, 0.deg, 90.deg)
+curve_circle(:rough_circle, 0, 0, 25.mm, 8.mm)
+
+# Legal non-associative body with no feature ancestry.
+dumb_body(:supplier_motor, -40.mm, -30.mm, -25.mm, 40.mm, 30.mm, 90.mm, "supplier STEP body")
+
+recompute()
+

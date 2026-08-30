@@ -1,0 +1,1460 @@
+{
+  "schema_version": 2,
+  "language": "WaifuCAD SCL/WCS read-only model inspection",
+  "read_only": true,
+  "journalled": false,
+  "enumeration_index_base": 0,
+  "persistent_topology_indices": false,
+  "notes": [
+    "All getters store into the OUT ScriptRuntime variable.",
+    "Ruby-like .wcs and legacy .scl dispatch to the same BetterC getter implementation.",
+    "Enumeration INDEX arguments accept numeric literals or numeric ScriptRuntime variables.",
+    "Exact measurement getters fail when exact WaifuBRep properties are unavailable; they never substitute preview bounds.",
+    "Persistent exact topology IDs are 64-bit hexadecimal strings; raw arena indices remain non-persistent.",
+    "Primitive/extrude/translated exact topology IDs survive ordinary dimensional recompute inside the document session.",
+    "PMI legacy subentity indices remain diagnostic until PMI association is migrated to persistent topology IDs.",
+    "Expression getters expose source formulae and last evaluation error without changing parameters.",
+    "Datum getters expose resolved world-space frames/axes, including associative CSYS-derived and offset datum features.",
+    "Topology-lineage getters expose semantic split/merge/boolean ancestry as persistent hexadecimal IDs.",
+    "Recompute cancellation state is read-only and may change concurrently while an interactive recompute is active.",
+    "Sketch-solver getters expose residual/DOF/convergence and redundancy/conflict diagnostics without mutating geometry.",
+    "Jacobian getters expose bounded finite-difference rank analysis and explicitly report truncation when fixed BetterC limits are exceeded."
+  ],
+  "commands": [
+    {
+      "command": "get_model_name",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_model_name()",
+      "scl": "get_model_name OUT"
+    },
+    {
+      "command": "get_parameter_count",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_parameter_count()",
+      "scl": "get_parameter_count OUT"
+    },
+    {
+      "command": "get_feature_count",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_count()",
+      "scl": "get_feature_count OUT"
+    },
+    {
+      "command": "get_model_worker_count",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_model_worker_count()",
+      "scl": "get_model_worker_count OUT"
+    },
+    {
+      "command": "get_model_exact_solid_count",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_model_exact_solid_count()",
+      "scl": "get_model_exact_solid_count OUT"
+    },
+    {
+      "command": "get_model_mesh_count",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_model_mesh_count()",
+      "scl": "get_model_mesh_count OUT"
+    },
+    {
+      "command": "get_model_brep_counts",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_model_brep_counts()",
+      "scl": "get_model_brep_counts OUT"
+    },
+    {
+      "command": "get_model_mesh_totals",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_model_mesh_totals()",
+      "scl": "get_model_mesh_totals OUT"
+    },
+    {
+      "command": "get_parameter_name",
+      "arguments": [
+        "OUT",
+        "INDEX"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_parameter_name(index)",
+      "scl": "get_parameter_name OUT INDEX"
+    },
+    {
+      "command": "get_parameter_exists",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_parameter_exists(:name)",
+      "scl": "get_parameter_exists OUT NAME"
+    },
+    {
+      "command": "get_parameter_id",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_parameter_id(:name)",
+      "scl": "get_parameter_id OUT NAME"
+    },
+    {
+      "command": "get_parameter_value",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_parameter_value(:name)",
+      "scl": "get_parameter_value OUT NAME"
+    },
+    {
+      "command": "get_parameter_unit",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_parameter_unit(:name)",
+      "scl": "get_parameter_unit OUT NAME"
+    },
+    {
+      "command": "get_parameter_dependant_count",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_parameter_dependant_count(:name)",
+      "scl": "get_parameter_dependant_count OUT NAME"
+    },
+    {
+      "command": "get_parameter_dependant_name",
+      "arguments": [
+        "OUT",
+        "NAME",
+        "INDEX"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_parameter_dependant_name(:name, index)",
+      "scl": "get_parameter_dependant_name OUT NAME INDEX"
+    },
+    {
+      "command": "get_feature_name",
+      "arguments": [
+        "OUT",
+        "INDEX"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_name(index)",
+      "scl": "get_feature_name OUT INDEX"
+    },
+    {
+      "command": "get_feature_exists",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_feature_exists(:name)",
+      "scl": "get_feature_exists OUT NAME"
+    },
+    {
+      "command": "get_feature_id",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_id(:name)",
+      "scl": "get_feature_id OUT NAME"
+    },
+    {
+      "command": "get_feature_index",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_index(:name)",
+      "scl": "get_feature_index OUT NAME"
+    },
+    {
+      "command": "get_feature_kind",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_kind(:name)",
+      "scl": "get_feature_kind OUT NAME"
+    },
+    {
+      "command": "get_feature_role",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_role(:name)",
+      "scl": "get_feature_role OUT NAME"
+    },
+    {
+      "command": "get_feature_dirty",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_feature_dirty(:name)",
+      "scl": "get_feature_dirty OUT NAME"
+    },
+    {
+      "command": "get_feature_recommended",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_feature_recommended(:name)",
+      "scl": "get_feature_recommended OUT NAME"
+    },
+    {
+      "command": "get_feature_dependency_depth",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_dependency_depth(:name)",
+      "scl": "get_feature_dependency_depth OUT NAME"
+    },
+    {
+      "command": "get_feature_operand_count",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_operand_count(:name)",
+      "scl": "get_feature_operand_count OUT NAME"
+    },
+    {
+      "command": "get_feature_dependant_count",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_dependant_count(:name)",
+      "scl": "get_feature_dependant_count OUT NAME"
+    },
+    {
+      "command": "get_feature_dependant_name",
+      "arguments": [
+        "OUT",
+        "NAME",
+        "INDEX"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_dependant_name(:name, index)",
+      "scl": "get_feature_dependant_name OUT NAME INDEX"
+    },
+    {
+      "command": "get_feature_payload",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_payload(:name)",
+      "scl": "get_feature_payload OUT NAME"
+    },
+    {
+      "command": "get_feature_payload2",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_payload2(:name)",
+      "scl": "get_feature_payload2 OUT NAME"
+    },
+    {
+      "command": "get_feature_mesh_id",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_mesh_id(:name)",
+      "scl": "get_feature_mesh_id OUT NAME"
+    },
+    {
+      "command": "get_feature_operand_kind",
+      "arguments": [
+        "OUT",
+        "NAME",
+        "INDEX"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_operand_kind(:name, index)",
+      "scl": "get_feature_operand_kind OUT NAME INDEX"
+    },
+    {
+      "command": "get_feature_operand_name",
+      "arguments": [
+        "OUT",
+        "NAME",
+        "INDEX"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_operand_name(:name, index)",
+      "scl": "get_feature_operand_name OUT NAME INDEX"
+    },
+    {
+      "command": "get_feature_operand_value",
+      "arguments": [
+        "OUT",
+        "NAME",
+        "INDEX"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_operand_value(:name, index)",
+      "scl": "get_feature_operand_value OUT NAME INDEX"
+    },
+    {
+      "command": "get_feature_operand_entity_id",
+      "arguments": [
+        "OUT",
+        "NAME",
+        "INDEX"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_operand_entity_id(:name, index)",
+      "scl": "get_feature_operand_entity_id OUT NAME INDEX"
+    },
+    {
+      "command": "get_feature_geometry_status",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_geometry_status(:name)",
+      "scl": "get_feature_geometry_status OUT NAME"
+    },
+    {
+      "command": "get_feature_preview_error",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_preview_error(:name)",
+      "scl": "get_feature_preview_error OUT NAME"
+    },
+    {
+      "command": "get_feature_exact_error",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_exact_error(:name)",
+      "scl": "get_feature_exact_error OUT NAME"
+    },
+    {
+      "command": "get_feature_exact_solid_id",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_exact_solid_id(:name)",
+      "scl": "get_feature_exact_solid_id OUT NAME"
+    },
+    {
+      "command": "get_feature_preview_bounds_valid",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_feature_preview_bounds_valid(:name)",
+      "scl": "get_feature_preview_bounds_valid OUT NAME"
+    },
+    {
+      "command": "get_feature_preview_bounds",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_feature_preview_bounds(:name)",
+      "scl": "get_feature_preview_bounds OUT NAME"
+    },
+    {
+      "command": "get_feature_exact_bounds_valid",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_feature_exact_bounds_valid(:name)",
+      "scl": "get_feature_exact_bounds_valid OUT NAME"
+    },
+    {
+      "command": "get_feature_exact_bounds",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_feature_exact_bounds(:name)",
+      "scl": "get_feature_exact_bounds OUT NAME"
+    },
+    {
+      "command": "get_feature_bounds_source",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_bounds_source(:name)",
+      "scl": "get_feature_bounds_source OUT NAME"
+    },
+    {
+      "command": "get_feature_bounds",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_feature_bounds(:name)",
+      "scl": "get_feature_bounds OUT NAME"
+    },
+    {
+      "command": "get_feature_exact_primitive_kind",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_exact_primitive_kind(:name)",
+      "scl": "get_feature_exact_primitive_kind OUT NAME"
+    },
+    {
+      "command": "get_feature_exact_topology_counts",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_feature_exact_topology_counts(:name)",
+      "scl": "get_feature_exact_topology_counts OUT NAME"
+    },
+    {
+      "command": "get_feature_volume",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_volume(:name)",
+      "scl": "get_feature_volume OUT NAME"
+    },
+    {
+      "command": "get_feature_surface_area",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_surface_area(:name)",
+      "scl": "get_feature_surface_area OUT NAME"
+    },
+    {
+      "command": "get_feature_centre_of_mass",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_feature_centre_of_mass(:name)",
+      "scl": "get_feature_centre_of_mass OUT NAME"
+    },
+    {
+      "command": "get_feature_mesh_vertex_count",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_mesh_vertex_count(:name)",
+      "scl": "get_feature_mesh_vertex_count OUT NAME"
+    },
+    {
+      "command": "get_feature_mesh_triangle_count",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_mesh_triangle_count(:name)",
+      "scl": "get_feature_mesh_triangle_count OUT NAME"
+    },
+    {
+      "command": "get_feature_mesh_source",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_mesh_source(:name)",
+      "scl": "get_feature_mesh_source OUT NAME"
+    },
+    {
+      "command": "get_feature_mesh_format",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_mesh_format(:name)",
+      "scl": "get_feature_mesh_format OUT NAME"
+    },
+    {
+      "command": "get_feature_mesh_closed_hint",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_feature_mesh_closed_hint(:name)",
+      "scl": "get_feature_mesh_closed_hint OUT NAME"
+    },
+    {
+      "command": "get_feature_mesh_convexity",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_mesh_convexity(:name)",
+      "scl": "get_feature_mesh_convexity OUT NAME"
+    },
+    {
+      "command": "get_pmi_count",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_pmi_count()",
+      "scl": "get_pmi_count OUT"
+    },
+    {
+      "command": "get_pmi_name",
+      "arguments": [
+        "OUT",
+        "INDEX"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_pmi_name(index)",
+      "scl": "get_pmi_name OUT INDEX"
+    },
+    {
+      "command": "get_pmi_exists",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_pmi_exists(:name)",
+      "scl": "get_pmi_exists OUT NAME"
+    },
+    {
+      "command": "get_pmi_id",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_pmi_id(:name)",
+      "scl": "get_pmi_id OUT NAME"
+    },
+    {
+      "command": "get_pmi_kind",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_pmi_kind(:name)",
+      "scl": "get_pmi_kind OUT NAME"
+    },
+    {
+      "command": "get_pmi_text",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_pmi_text(:name)",
+      "scl": "get_pmi_text OUT NAME"
+    },
+    {
+      "command": "get_pmi_visible",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_pmi_visible(:name)",
+      "scl": "get_pmi_visible OUT NAME"
+    },
+    {
+      "command": "get_pmi_associative",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_pmi_associative(:name)",
+      "scl": "get_pmi_associative OUT NAME"
+    },
+    {
+      "command": "get_pmi_feature_id",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_pmi_feature_id(:name)",
+      "scl": "get_pmi_feature_id OUT NAME"
+    },
+    {
+      "command": "get_pmi_feature_name",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_pmi_feature_name(:name)",
+      "scl": "get_pmi_feature_name OUT NAME"
+    },
+    {
+      "command": "get_pmi_subentity_kind",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_pmi_subentity_kind(:name)",
+      "scl": "get_pmi_subentity_kind OUT NAME"
+    },
+    {
+      "command": "get_pmi_subentity_index",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_pmi_subentity_index(:name)",
+      "scl": "get_pmi_subentity_index OUT NAME"
+    },
+    {
+      "command": "get_feature_persistent_body_id",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_persistent_body_id(:name)",
+      "scl": "get_feature_persistent_body_id OUT NAME"
+    },
+    {
+      "command": "get_feature_face_persistent_id",
+      "arguments": [
+        "OUT",
+        "NAME",
+        "INDEX"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_face_persistent_id(:name, index)",
+      "scl": "get_feature_face_persistent_id OUT NAME INDEX"
+    },
+    {
+      "command": "get_feature_edge_persistent_id",
+      "arguments": [
+        "OUT",
+        "NAME",
+        "INDEX"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_edge_persistent_id(:name, index)",
+      "scl": "get_feature_edge_persistent_id OUT NAME INDEX"
+    },
+    {
+      "command": "get_feature_vertex_persistent_id",
+      "arguments": [
+        "OUT",
+        "NAME",
+        "INDEX"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_feature_vertex_persistent_id(:name, index)",
+      "scl": "get_feature_vertex_persistent_id OUT NAME INDEX"
+    },
+    {
+      "command": "get_topology_exists",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_topology_exists(topology_id)",
+      "scl": "get_topology_exists OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_kind",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_topology_kind(topology_id)",
+      "scl": "get_topology_kind OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_owner_feature_id",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_topology_owner_feature_id(topology_id)",
+      "scl": "get_topology_owner_feature_id OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_semantic_slot",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_topology_semantic_slot(topology_id)",
+      "scl": "get_topology_semantic_slot OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_vertex_point",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_topology_vertex_point(topology_id)",
+      "scl": "get_topology_vertex_point OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_edge_start_vertex_id",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_topology_edge_start_vertex_id(topology_id)",
+      "scl": "get_topology_edge_start_vertex_id OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_edge_end_vertex_id",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_topology_edge_end_vertex_id(topology_id)",
+      "scl": "get_topology_edge_end_vertex_id OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_face_surface_kind",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_topology_face_surface_kind(topology_id)",
+      "scl": "get_topology_face_surface_kind OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_owner_feature_name",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_topology_owner_feature_name(topology_id)",
+      "scl": "get_topology_owner_feature_name OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_vertex_tolerance",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_topology_vertex_tolerance(topology_id)",
+      "scl": "get_topology_vertex_tolerance OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_edge_curve_kind",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_topology_edge_curve_kind(topology_id)",
+      "scl": "get_topology_edge_curve_kind OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_edge_radius",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_topology_edge_radius(topology_id)",
+      "scl": "get_topology_edge_radius OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_edge_parameter_range",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_topology_edge_parameter_range(topology_id)",
+      "scl": "get_topology_edge_parameter_range OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_face_origin",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_topology_face_origin(topology_id)",
+      "scl": "get_topology_face_origin OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_face_axis",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_topology_face_axis(topology_id)",
+      "scl": "get_topology_face_axis OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_face_radius",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_topology_face_radius(topology_id)",
+      "scl": "get_topology_face_radius OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_topology_face_secondary_radius",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_topology_face_secondary_radius(topology_id)",
+      "scl": "get_topology_face_secondary_radius OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_model_requested_worker_count",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_model_requested_worker_count()",
+      "scl": "get_model_requested_worker_count OUT"
+    },
+    {
+      "command": "get_model_hardware_thread_count",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_model_hardware_thread_count()",
+      "scl": "get_model_hardware_thread_count OUT"
+    },
+    {
+      "command": "get_model_persistent_worker_count",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_model_persistent_worker_count()",
+      "scl": "get_model_persistent_worker_count OUT"
+    },
+    {
+      "command": "get_sketch_constraint_count",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_constraint_count()",
+      "scl": "get_sketch_constraint_count OUT"
+    },
+    {
+      "command": "get_model_nurbs_curve_count",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_model_nurbs_curve_count()",
+      "scl": "get_model_nurbs_curve_count OUT"
+    },
+    {
+      "command": "get_model_nurbs_surface_count",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_model_nurbs_surface_count()",
+      "scl": "get_model_nurbs_surface_count OUT"
+    },
+    {
+      "command": "get_topology_lineage_count",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_topology_lineage_count()",
+      "scl": "get_topology_lineage_count OUT"
+    },
+    {
+      "command": "get_model_recompute_cancelled",
+      "arguments": [
+        "OUT"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_model_recompute_cancelled()",
+      "scl": "get_model_recompute_cancelled OUT"
+    },
+    {
+      "command": "get_parameter_is_expression",
+      "arguments": [
+        "OUT",
+        "PARAMETER"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_parameter_is_expression(:parameter)",
+      "scl": "get_parameter_is_expression OUT PARAMETER"
+    },
+    {
+      "command": "get_parameter_expression",
+      "arguments": [
+        "OUT",
+        "PARAMETER"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_parameter_expression(:parameter)",
+      "scl": "get_parameter_expression OUT PARAMETER"
+    },
+    {
+      "command": "get_parameter_expression_error",
+      "arguments": [
+        "OUT",
+        "PARAMETER"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_parameter_expression_error(:parameter)",
+      "scl": "get_parameter_expression_error OUT PARAMETER"
+    },
+    {
+      "command": "get_sketch_constraint_name",
+      "arguments": [
+        "OUT",
+        "INDEX"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_sketch_constraint_name(index)",
+      "scl": "get_sketch_constraint_name OUT INDEX"
+    },
+    {
+      "command": "get_sketch_constraint_exists",
+      "arguments": [
+        "OUT",
+        "CONSTRAINT"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_sketch_constraint_exists(:constraint)",
+      "scl": "get_sketch_constraint_exists OUT CONSTRAINT"
+    },
+    {
+      "command": "get_sketch_constraint_kind",
+      "arguments": [
+        "OUT",
+        "CONSTRAINT"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_sketch_constraint_kind(:constraint)",
+      "scl": "get_sketch_constraint_kind OUT CONSTRAINT"
+    },
+    {
+      "command": "get_sketch_constraint_status",
+      "arguments": [
+        "OUT",
+        "CONSTRAINT"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_sketch_constraint_status(:constraint)",
+      "scl": "get_sketch_constraint_status OUT CONSTRAINT"
+    },
+    {
+      "command": "get_sketch_constraint_value",
+      "arguments": [
+        "OUT",
+        "CONSTRAINT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_constraint_value(:constraint)",
+      "scl": "get_sketch_constraint_value OUT CONSTRAINT"
+    },
+    {
+      "command": "get_sketch_constraint_enabled",
+      "arguments": [
+        "OUT",
+        "CONSTRAINT"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_sketch_constraint_enabled(:constraint)",
+      "scl": "get_sketch_constraint_enabled OUT CONSTRAINT"
+    },
+    {
+      "command": "get_sketch_constraint_sketch_name",
+      "arguments": [
+        "OUT",
+        "CONSTRAINT"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_sketch_constraint_sketch_name(:constraint)",
+      "scl": "get_sketch_constraint_sketch_name OUT CONSTRAINT"
+    },
+    {
+      "command": "get_sketch_constraint_first_feature_name",
+      "arguments": [
+        "OUT",
+        "CONSTRAINT"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_sketch_constraint_first_feature_name(:constraint)",
+      "scl": "get_sketch_constraint_first_feature_name OUT CONSTRAINT"
+    },
+    {
+      "command": "get_sketch_constraint_second_feature_name",
+      "arguments": [
+        "OUT",
+        "CONSTRAINT"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_sketch_constraint_second_feature_name(:constraint)",
+      "scl": "get_sketch_constraint_second_feature_name OUT CONSTRAINT"
+    },
+    {
+      "command": "get_sketch_constraint_points",
+      "arguments": [
+        "OUT",
+        "CONSTRAINT"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_sketch_constraint_points(:constraint)",
+      "scl": "get_sketch_constraint_points OUT CONSTRAINT"
+    },
+    {
+      "command": "get_datum_frame_origin",
+      "arguments": [
+        "OUT",
+        "FEATURE"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_datum_frame_origin(:datum)",
+      "scl": "get_datum_frame_origin OUT FEATURE"
+    },
+    {
+      "command": "get_datum_frame_x_axis",
+      "arguments": [
+        "OUT",
+        "FEATURE"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_datum_frame_x_axis(:datum)",
+      "scl": "get_datum_frame_x_axis OUT FEATURE"
+    },
+    {
+      "command": "get_datum_frame_y_axis",
+      "arguments": [
+        "OUT",
+        "FEATURE"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_datum_frame_y_axis(:datum)",
+      "scl": "get_datum_frame_y_axis OUT FEATURE"
+    },
+    {
+      "command": "get_datum_frame_z_axis",
+      "arguments": [
+        "OUT",
+        "FEATURE"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_datum_frame_z_axis(:datum)",
+      "scl": "get_datum_frame_z_axis OUT FEATURE"
+    },
+    {
+      "command": "get_datum_axis_origin",
+      "arguments": [
+        "OUT",
+        "FEATURE"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_datum_axis_origin(:datum)",
+      "scl": "get_datum_axis_origin OUT FEATURE"
+    },
+    {
+      "command": "get_datum_axis_direction",
+      "arguments": [
+        "OUT",
+        "FEATURE"
+      ],
+      "output_type": "number_list",
+      "wcs": "out = get_datum_axis_direction(:datum)",
+      "scl": "get_datum_axis_direction OUT FEATURE"
+    },
+    {
+      "command": "get_topology_lineage_result",
+      "arguments": [
+        "OUT",
+        "INDEX"
+      ],
+      "output_type": "persistent_id",
+      "wcs": "out = get_topology_lineage_result(index)",
+      "scl": "get_topology_lineage_result OUT INDEX"
+    },
+    {
+      "command": "get_topology_lineage_parent_a",
+      "arguments": [
+        "OUT",
+        "INDEX"
+      ],
+      "output_type": "persistent_id",
+      "wcs": "out = get_topology_lineage_parent_a(index)",
+      "scl": "get_topology_lineage_parent_a OUT INDEX"
+    },
+    {
+      "command": "get_topology_lineage_parent_b",
+      "arguments": [
+        "OUT",
+        "INDEX"
+      ],
+      "output_type": "persistent_id",
+      "wcs": "out = get_topology_lineage_parent_b(index)",
+      "scl": "get_topology_lineage_parent_b OUT INDEX"
+    },
+    {
+      "command": "get_topology_lineage_kind",
+      "arguments": [
+        "OUT",
+        "INDEX"
+      ],
+      "output_type": "string",
+      "wcs": "out = get_topology_lineage_kind(index)",
+      "scl": "get_topology_lineage_kind OUT INDEX"
+    },
+    {
+      "command": "get_feature_exact_shell_count",
+      "arguments": [
+        "OUT",
+        "FEATURE"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_exact_shell_count(:feature)",
+      "scl": "get_feature_exact_shell_count OUT FEATURE"
+    },
+    {
+      "command": "get_feature_exact_genus",
+      "arguments": [
+        "OUT",
+        "FEATURE"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_feature_exact_genus(:feature)",
+      "scl": "get_feature_exact_genus OUT FEATURE"
+    },
+    {
+      "command": "get_topology_face_loop_count",
+      "arguments": [
+        "OUT",
+        "PERSISTENT_ID"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_topology_face_loop_count(face_id)",
+      "scl": "get_topology_face_loop_count OUT PERSISTENT_ID"
+    },
+    {
+      "command": "get_sketch_constraint_residual",
+      "arguments": [
+        "OUT",
+        "NAME"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_constraint_residual(:constraint)",
+      "scl": "get_sketch_constraint_residual OUT NAME"
+    },
+    {
+      "command": "get_sketch_initial_dof",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_initial_dof(:sketch)",
+      "scl": "get_sketch_initial_dof OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_dof",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_dof(:sketch)",
+      "scl": "get_sketch_dof OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_constraint_equation_count",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_constraint_equation_count(:sketch)",
+      "scl": "get_sketch_constraint_equation_count OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_satisfied_constraint_count",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_satisfied_constraint_count(:sketch)",
+      "scl": "get_sketch_satisfied_constraint_count OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_redundant_constraint_count",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_redundant_constraint_count(:sketch)",
+      "scl": "get_sketch_redundant_constraint_count OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_conflicting_constraint_count",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_conflicting_constraint_count(:sketch)",
+      "scl": "get_sketch_conflicting_constraint_count OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_invalid_constraint_count",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_invalid_constraint_count(:sketch)",
+      "scl": "get_sketch_invalid_constraint_count OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_unsatisfied_constraint_count",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_unsatisfied_constraint_count(:sketch)",
+      "scl": "get_sketch_unsatisfied_constraint_count OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_solve_iterations",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_solve_iterations(:sketch)",
+      "scl": "get_sketch_solve_iterations OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_max_residual",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_max_residual(:sketch)",
+      "scl": "get_sketch_max_residual OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_solve_converged",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_sketch_solve_converged(:sketch)",
+      "scl": "get_sketch_solve_converged OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_fully_constrained",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_sketch_fully_constrained(:sketch)",
+      "scl": "get_sketch_fully_constrained OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_constraint_rank_contribution",
+      "arguments": [
+        "OUT",
+        "CONSTRAINT"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_constraint_rank_contribution(:constraint)",
+      "scl": "get_sketch_constraint_rank_contribution OUT CONSTRAINT"
+    },
+    {
+      "command": "get_sketch_constraint_rank_redundant",
+      "arguments": [
+        "OUT",
+        "CONSTRAINT"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_sketch_constraint_rank_redundant(:constraint)",
+      "scl": "get_sketch_constraint_rank_redundant OUT CONSTRAINT"
+    },
+    {
+      "command": "get_sketch_total_equation_count",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_total_equation_count(:sketch)",
+      "scl": "get_sketch_total_equation_count OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_jacobian_rank",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_jacobian_rank(:sketch)",
+      "scl": "get_sketch_jacobian_rank OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_rank_deficiency",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_rank_deficiency(:sketch)",
+      "scl": "get_sketch_rank_deficiency OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_nonlinear_iterations",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "number",
+      "wcs": "out = get_sketch_nonlinear_iterations(:sketch)",
+      "scl": "get_sketch_nonlinear_iterations OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_under_constrained",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_sketch_under_constrained(:sketch)",
+      "scl": "get_sketch_under_constrained OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_over_constrained",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_sketch_over_constrained(:sketch)",
+      "scl": "get_sketch_over_constrained OUT SKETCH"
+    },
+    {
+      "command": "get_sketch_rank_analysis_truncated",
+      "arguments": [
+        "OUT",
+        "SKETCH"
+      ],
+      "output_type": "boolean",
+      "wcs": "out = get_sketch_rank_analysis_truncated(:sketch)",
+      "scl": "get_sketch_rank_analysis_truncated OUT SKETCH"
+    }
+  ],
+  "persistent_topology_ids": true,
+  "persistent_topology_id_format": "0x + 16 lowercase hexadecimal digits"
+}
+

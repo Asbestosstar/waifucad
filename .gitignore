@@ -1,0 +1,16 @@
+/bin/
+/build/obj/
+*.o
+*.obj
+*.so
+*.dylib
+*.a
+*.lib
+*.exe
+journals/*.wjournal
+!journals/README.md
+
+
+/build/tests/fake-ldc*
+/build/tests/openscad-probe.*
+

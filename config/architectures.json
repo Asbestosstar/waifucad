@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "requiredAddressBits": 64,
+  "meaning": "WaifuCAD accepts only 64-bit ISA/address models. Every architecture listed here must use 64-bit pointers in a WaifuCAD build.",
+  "architectures": [
+    {
+      "id": "x86_64",
+      "bits": 64,
+      "family": "x86-64",
+      "endianness": "little",
+      "notes": "64-bit x86 only; no i386/x86-32 port."
+    },
+    {
+      "id": "aarch64",
+      "bits": 64,
+      "family": "Arm",
+      "endianness": "little",
+      "notes": "AArch64/ARM64 only; no AArch32 port."
+    },
+    {
+      "id": "riscv64",
+      "bits": 64,
+      "family": "RISC-V",
+      "endianness": "little",
+      "notes": "RV64 only (XLEN=64). RV32 is out of scope."
+    },
+    {
+      "id": "sparc64",
+      "bits": 64,
+      "family": "SPARC",
+      "endianness": "big",
+      "notes": "64-bit SPARC only."
+    },
+    {
+      "id": "ppc64",
+      "bits": 64,
+      "family": "PowerPC",
+      "endianness": "big",
+      "notes": "64-bit big-endian PowerPC/POWER."
+    },
+    {
+      "id": "ppc64le",
+      "bits": 64,
+      "family": "PowerPC",
+      "endianness": "little",
+      "notes": "64-bit little-endian PowerPC/POWER."
+    },
+    {
+      "id": "s390x",
+      "bits": 64,
+      "family": "IBM Z",
+      "endianness": "big",
+      "notes": "s390x is the 64-bit IBM Z architecture name."
+    },
+    {
+      "id": "ia64",
+      "bits": 64,
+      "family": "Itanium",
+      "endianness": "little",
+      "notes": "64-bit Itanium only."
+    },
+    {
+      "id": "parisc64",
+      "bits": 64,
+      "family": "PA-RISC",
+      "endianness": "big",
+      "notes": "64-bit PA-RISC only."
+    },
+    {
+      "id": "mips64",
+      "bits": 64,
+      "family": "MIPS",
+      "endianness": "bi",
+      "notes": "64-bit MIPS only; target ABI decides endianness."
+    },
+    {
+      "id": "alpha64",
+      "bits": 64,
+      "family": "Alpha",
+      "endianness": "little",
+      "notes": "64-bit DEC Alpha."
+    },
+    {
+      "id": "tilegx",
+      "bits": 64,
+      "family": "TILE-Gx",
+      "endianness": "little",
+      "notes": "TILE-Gx is a 64-bit ISA family; TILEPro/32-bit targets are not supported."
+    },
+    {
+      "id": "wasm64",
+      "bits": 64,
+      "family": "WebAssembly",
+      "endianness": "little",
+      "notes": "Memory64/wasm64 only; wasm32 is explicitly unsupported."
+    }
+  ]
+}
+
+
+

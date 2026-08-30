@@ -1,0 +1,24 @@
+waifucad 0.2
+model nx_style_workflow
+
+param width 80 mm
+param depth 50 mm
+param thickness 10 mm
+
+# Preferred modelling route: sketch -> feature.
+sketch base_sketch XY
+sketch_rect base_profile base_sketch width depth true
+extrude base_body base_profile thickness
+
+# Legal NX-style rough geometry outside a sketch.
+line rough_axis 0 0 0 0 0 100
+arc rough_reference 20 10 0 15 0 90
+curve_circle rough_circle 0 0 25 8
+
+# Legal non-associative body with no feature ancestry.
+dumb_body supplier_motor -40 -30 -25 40 30 90 "supplier STEP body"
+
+recompute
+
+
+

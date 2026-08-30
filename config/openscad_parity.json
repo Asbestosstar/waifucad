@@ -1,0 +1,866 @@
+{
+  "contract": "Waifu Scripted CAD OpenSCAD capability baseline",
+  "source": "https://openscad.org/cheatsheet/index.html",
+  "source_version": "v2021.01 as displayed by the cheat sheet",
+  "syntax_policy": "Equivalent capability is required; identical OpenSCAD source syntax is not required. The .wcs language stays journal-friendly and deterministic.",
+  "exactness_policy": "A command being available does not imply exact WaifuBRep support. layer distinguishes exact B-rep, preview/model-graph, runtime and compatibility semantics.",
+  "capabilities": [
+    {
+      "category": "syntax",
+      "openscad": "variable assignment",
+      "waifucad": "var / param / set",
+      "layer": "runtime",
+      "notes": "Script variables are distinct from persistent model parameters."
+    },
+    {
+      "category": "syntax",
+      "openscad": "ternary ?:",
+      "waifucad": "ternary",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "syntax",
+      "openscad": "function",
+      "waifucad": "function + call_function",
+      "layer": "runtime",
+      "notes": "Fixed BetterC callable body with up to eight positional arguments; body is semicolon-separated SCL."
+    },
+    {
+      "category": "syntax",
+      "openscad": "module",
+      "waifucad": "module + call",
+      "layer": "runtime",
+      "notes": "Fixed BetterC callable body with up to eight positional arguments; explicit child features are supplied with `call ... --children ...`."
+    },
+    {
+      "category": "syntax",
+      "openscad": "include",
+      "waifucad": "include",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "syntax",
+      "openscad": "use",
+      "waifucad": "use",
+      "layer": "runtime",
+      "notes": "Loads module/function definitions without executing top-level modelling statements."
+    },
+    {
+      "category": "constants",
+      "openscad": "undef",
+      "waifucad": "undef",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "constants",
+      "openscad": "PI",
+      "waifucad": "PI",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": "+",
+      "waifucad": "calc OUT A + B",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": "-",
+      "waifucad": "calc OUT A - B",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": "*",
+      "waifucad": "calc OUT A * B",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": "/",
+      "waifucad": "calc OUT A / B",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": "%",
+      "waifucad": "calc OUT A % B",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": "^",
+      "waifucad": "calc OUT A ^ B",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": "<",
+      "waifucad": "calc OUT A < B",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": "<=",
+      "waifucad": "calc OUT A <= B",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": "==",
+      "waifucad": "calc OUT A == B",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": "!=",
+      "waifucad": "calc OUT A != B",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": ">=",
+      "waifucad": "calc OUT A >= B",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": ">",
+      "waifucad": "calc OUT A > B",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": "&&",
+      "waifucad": "calc OUT A && B",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": "||",
+      "waifucad": "calc OUT A || B",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "operators",
+      "openscad": "!",
+      "waifucad": "unary OUT ! VALUE",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "special variables",
+      "openscad": "$fa",
+      "waifucad": "$fa",
+      "layer": "runtime",
+      "notes": "Pre-created in ScriptRuntime; update with var and read numerically/list-wise."
+    },
+    {
+      "category": "special variables",
+      "openscad": "$fs",
+      "waifucad": "$fs",
+      "layer": "runtime",
+      "notes": "Pre-created in ScriptRuntime; update with var and read numerically/list-wise."
+    },
+    {
+      "category": "special variables",
+      "openscad": "$fn",
+      "waifucad": "$fn",
+      "layer": "runtime",
+      "notes": "Pre-created in ScriptRuntime; update with var and read numerically/list-wise."
+    },
+    {
+      "category": "special variables",
+      "openscad": "$t",
+      "waifucad": "$t",
+      "layer": "runtime",
+      "notes": "Pre-created in ScriptRuntime; update with var and read numerically/list-wise."
+    },
+    {
+      "category": "special variables",
+      "openscad": "$vpr",
+      "waifucad": "$vpr",
+      "layer": "runtime",
+      "notes": "Pre-created in ScriptRuntime; update with var and read numerically/list-wise."
+    },
+    {
+      "category": "special variables",
+      "openscad": "$vpt",
+      "waifucad": "$vpt",
+      "layer": "runtime",
+      "notes": "Pre-created in ScriptRuntime; update with var and read numerically/list-wise."
+    },
+    {
+      "category": "special variables",
+      "openscad": "$vpd",
+      "waifucad": "$vpd",
+      "layer": "runtime",
+      "notes": "Pre-created in ScriptRuntime; update with var and read numerically/list-wise."
+    },
+    {
+      "category": "special variables",
+      "openscad": "$vpf",
+      "waifucad": "$vpf",
+      "layer": "runtime",
+      "notes": "Pre-created in ScriptRuntime; update with var and read numerically/list-wise."
+    },
+    {
+      "category": "special variables",
+      "openscad": "$children",
+      "waifucad": "$children",
+      "layer": "runtime",
+      "notes": "Pre-created in ScriptRuntime; update with var and read numerically/list-wise."
+    },
+    {
+      "category": "special variables",
+      "openscad": "$preview",
+      "waifucad": "$preview",
+      "layer": "runtime",
+      "notes": "Pre-created in ScriptRuntime; update with var and read numerically/list-wise."
+    },
+    {
+      "category": "modifiers",
+      "openscad": "*",
+      "waifucad": "disable",
+      "layer": "model graph",
+      "notes": ""
+    },
+    {
+      "category": "modifiers",
+      "openscad": "!",
+      "waifucad": "show_only",
+      "layer": "model graph",
+      "notes": ""
+    },
+    {
+      "category": "modifiers",
+      "openscad": "#",
+      "waifucad": "highlight",
+      "layer": "model graph",
+      "notes": ""
+    },
+    {
+      "category": "modifiers",
+      "openscad": "%",
+      "waifucad": "background",
+      "layer": "model graph",
+      "notes": ""
+    },
+    {
+      "category": "2D",
+      "openscad": "circle",
+      "waifucad": "circle",
+      "layer": "preview",
+      "notes": "Radius form uses `circle`; diameter form uses `circle_d`; both stay parametric."
+    },
+    {
+      "category": "2D",
+      "openscad": "square",
+      "waifucad": "square",
+      "layer": "preview",
+      "notes": "Supports scalar size or width/height plus centre flag."
+    },
+    {
+      "category": "2D",
+      "openscad": "polygon",
+      "waifucad": "polygon",
+      "layer": "preview",
+      "notes": "Point and optional path lists are retained; preview uses exact 2D bounds."
+    },
+    {
+      "category": "2D",
+      "openscad": "text",
+      "waifucad": "text",
+      "layer": "preview",
+      "notes": "Retains text plus font/direction/language/script/halign/valign/spacing metadata; preview bounds are approximate."
+    },
+    {
+      "category": "2D",
+      "openscad": "import DXF/SVG",
+      "waifucad": "import2d",
+      "layer": "dumb-body reference",
+      "notes": "File reference, declared bounds and convexity are retained; native DXF/SVG decoders remain future work."
+    },
+    {
+      "category": "2D",
+      "openscad": "projection",
+      "waifucad": "projection",
+      "layer": "preview",
+      "notes": ""
+    },
+    {
+      "category": "3D",
+      "openscad": "sphere",
+      "waifucad": "sphere",
+      "layer": "exact B-rep",
+      "notes": "Analytic WaifuBRep spherical face with seam topology; `sphere_d` provides the diameter form."
+    },
+    {
+      "category": "3D",
+      "openscad": "cube",
+      "waifucad": "cube / box",
+      "layer": "exact B-rep",
+      "notes": "Exact WaifuBRep box; SCL supports scalar or XYZ size plus centre flag."
+    },
+    {
+      "category": "3D",
+      "openscad": "cylinder",
+      "waifucad": "cylinder",
+      "layer": "exact B-rep",
+      "notes": "Exact analytic right cylinder with centre flag; `cylinder_d` provides the diameter form."
+    },
+    {
+      "category": "3D",
+      "openscad": "cylinder r1/r2",
+      "waifucad": "frustum / cone",
+      "layer": "exact B-rep",
+      "notes": "Analytic WaifuBRep cone/frustum, including a zero-radius apex; `frustum_d` provides d1/d2 semantics."
+    },
+    {
+      "category": "3D",
+      "openscad": "polyhedron",
+      "waifucad": "polyhedron",
+      "layer": "dumb-body reference",
+      "notes": "Point/face lists and convexity are retained; exact mesh-to-B-rep conversion remains future work."
+    },
+    {
+      "category": "3D",
+      "openscad": "import STL/OFF/AMF/3MF",
+      "waifucad": "import3d / import",
+      "layer": "dumb-body reference",
+      "notes": "File reference, declared bounds and convexity are retained; native file decoders remain future work."
+    },
+    {
+      "category": "3D",
+      "openscad": "linear_extrude",
+      "waifucad": "linear_extrude / extrude",
+      "layer": "model graph",
+      "notes": "Stores height, twist, slices, centre and convexity; untwisted rectangle/circle profiles are exact WaifuBRep solids."
+    },
+    {
+      "category": "3D",
+      "openscad": "rotate_extrude",
+      "waifucad": "rotate_extrude / revolve",
+      "layer": "preview",
+      "notes": ""
+    },
+    {
+      "category": "3D",
+      "openscad": "surface DAT/PNG",
+      "waifucad": "surface",
+      "layer": "dumb-body reference",
+      "notes": "File reference, declared bounds, centre and convexity are retained; native DAT/PNG height-map decoder remains future work."
+    },
+    {
+      "category": "transformations",
+      "openscad": "translate",
+      "waifucad": "translate",
+      "layer": "preview",
+      "notes": ""
+    },
+    {
+      "category": "transformations",
+      "openscad": "rotate Euler",
+      "waifucad": "rotate",
+      "layer": "preview",
+      "notes": ""
+    },
+    {
+      "category": "transformations",
+      "openscad": "rotate axis-angle",
+      "waifucad": "rotate_axis",
+      "layer": "preview",
+      "notes": ""
+    },
+    {
+      "category": "transformations",
+      "openscad": "scale",
+      "waifucad": "scale",
+      "layer": "preview",
+      "notes": ""
+    },
+    {
+      "category": "transformations",
+      "openscad": "resize",
+      "waifucad": "resize",
+      "layer": "preview",
+      "notes": "Stores target XYZ, auto-axis flags and convexity; preview honours auto-axis aspect scaling."
+    },
+    {
+      "category": "transformations",
+      "openscad": "mirror",
+      "waifucad": "mirror",
+      "layer": "preview",
+      "notes": ""
+    },
+    {
+      "category": "transformations",
+      "openscad": "multmatrix",
+      "waifucad": "multmatrix",
+      "layer": "preview",
+      "notes": ""
+    },
+    {
+      "category": "transformations",
+      "openscad": "color",
+      "waifucad": "colour / color",
+      "layer": "preview",
+      "notes": "British `colour` preferred; US alias retained. Numeric RGBA and named/hex colour strings are accepted."
+    },
+    {
+      "category": "transformations",
+      "openscad": "offset",
+      "waifucad": "offset",
+      "layer": "preview",
+      "notes": "`offset_delta` preserves delta/chamfer intent; `offset_r` preserves rounded-radius intent; `offset` aliases delta."
+    },
+    {
+      "category": "transformations",
+      "openscad": "hull",
+      "waifucad": "hull",
+      "layer": "preview",
+      "notes": ""
+    },
+    {
+      "category": "transformations",
+      "openscad": "minkowski",
+      "waifucad": "minkowski",
+      "layer": "preview",
+      "notes": "Stores convexity hint; geometric result is currently preview/model-graph only."
+    },
+    {
+      "category": "lists",
+      "openscad": "list creation",
+      "waifucad": "list",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "lists",
+      "openscad": "index",
+      "waifucad": "index",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "lists",
+      "openscad": "dot x/y/z indexing",
+      "waifucad": "component",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "lists",
+      "openscad": "range",
+      "waifucad": "range",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "booleans",
+      "openscad": "union",
+      "waifucad": "union",
+      "layer": "preview",
+      "notes": ""
+    },
+    {
+      "category": "booleans",
+      "openscad": "difference",
+      "waifucad": "difference / subtract",
+      "layer": "preview",
+      "notes": ""
+    },
+    {
+      "category": "booleans",
+      "openscad": "intersection",
+      "waifucad": "intersection / intersect",
+      "layer": "preview",
+      "notes": ""
+    },
+    {
+      "category": "list comprehensions",
+      "openscad": "generate for",
+      "waifucad": "range + for + list_append",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "list comprehensions",
+      "openscad": "C-style for",
+      "waifucad": "for + calc + list_append",
+      "layer": "runtime",
+      "notes": "SCL loop is range-shaped; arbitrary next expressions are composed explicitly with calc."
+    },
+    {
+      "category": "list comprehensions",
+      "openscad": "each flatten",
+      "waifucad": "each",
+      "layer": "runtime",
+      "notes": "Current numeric lists are already flat."
+    },
+    {
+      "category": "list comprehensions",
+      "openscad": "if / if else",
+      "waifucad": "if + ternary",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "list comprehensions",
+      "openscad": "let assignments",
+      "waifucad": "let",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "flow control",
+      "openscad": "for",
+      "waifucad": "for",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "flow control",
+      "openscad": "intersection_for",
+      "waifucad": "intersection_for",
+      "layer": "runtime",
+      "notes": "Executes the loop body; intersection reduction is expressed explicitly with intersection features."
+    },
+    {
+      "category": "flow control",
+      "openscad": "if",
+      "waifucad": "if",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "flow control",
+      "openscad": "let",
+      "waifucad": "let",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "type tests",
+      "openscad": "is_undef",
+      "waifucad": "type_test OUT is_undef VALUE",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "type tests",
+      "openscad": "is_bool",
+      "waifucad": "type_test OUT is_bool VALUE",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "type tests",
+      "openscad": "is_num",
+      "waifucad": "type_test OUT is_num VALUE",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "type tests",
+      "openscad": "is_string",
+      "waifucad": "type_test OUT is_string VALUE",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "type tests",
+      "openscad": "is_list",
+      "waifucad": "type_test OUT is_list VALUE",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "type tests",
+      "openscad": "is_function",
+      "waifucad": "type_test OUT is_function VALUE",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "other",
+      "openscad": "echo",
+      "waifucad": "echo / echo_value",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "other",
+      "openscad": "render",
+      "waifucad": "render",
+      "layer": "model graph",
+      "notes": "Stores a render barrier plus convexity hint."
+    },
+    {
+      "category": "other",
+      "openscad": "children",
+      "waifucad": "children",
+      "layer": "runtime",
+      "notes": "Modules accept explicit child features with `call ... --children ...`; `children OUT INDEX` selects one and `children OUT` groups all supplied children."
+    },
+    {
+      "category": "other",
+      "openscad": "assert",
+      "waifucad": "assert",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "other",
+      "openscad": "assign (deprecated)",
+      "waifucad": "let",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "functions",
+      "openscad": "concat",
+      "waifucad": "concat",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "functions",
+      "openscad": "lookup",
+      "waifucad": "lookup",
+      "layer": "runtime",
+      "notes": "Flat alternating x,y numeric table."
+    },
+    {
+      "category": "functions",
+      "openscad": "str",
+      "waifucad": "str",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "functions",
+      "openscad": "chr",
+      "waifucad": "chr",
+      "layer": "runtime",
+      "notes": "Encodes a Unicode scalar value as UTF-8; surrogate code points are rejected."
+    },
+    {
+      "category": "functions",
+      "openscad": "ord",
+      "waifucad": "ord",
+      "layer": "runtime",
+      "notes": "Decodes the first valid UTF-8 Unicode scalar value."
+    },
+    {
+      "category": "functions",
+      "openscad": "search",
+      "waifucad": "search",
+      "layer": "runtime",
+      "notes": "Numeric-list search."
+    },
+    {
+      "category": "functions",
+      "openscad": "version",
+      "waifucad": "version",
+      "layer": "runtime",
+      "notes": "Returns WaifuCAD script-runtime version."
+    },
+    {
+      "category": "functions",
+      "openscad": "version_num",
+      "waifucad": "version_num",
+      "layer": "runtime",
+      "notes": "Returns WaifuCAD script-runtime numeric version."
+    },
+    {
+      "category": "functions",
+      "openscad": "parent_module",
+      "waifucad": "parent_module",
+      "layer": "runtime",
+      "notes": "Uses the fixed BetterC callable stack; returns undef when the requested parent does not exist."
+    },
+    {
+      "category": "mathematical",
+      "openscad": "abs",
+      "waifucad": "math OUT abs ...",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "mathematical",
+      "openscad": "sign",
+      "waifucad": "math OUT sign ...",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "mathematical",
+      "openscad": "sin",
+      "waifucad": "math OUT sin ...",
+      "layer": "runtime",
+      "notes": "Trigonometric angles use degrees, matching OpenSCAD."
+    },
+    {
+      "category": "mathematical",
+      "openscad": "cos",
+      "waifucad": "math OUT cos ...",
+      "layer": "runtime",
+      "notes": "Trigonometric angles use degrees, matching OpenSCAD."
+    },
+    {
+      "category": "mathematical",
+      "openscad": "tan",
+      "waifucad": "math OUT tan ...",
+      "layer": "runtime",
+      "notes": "Trigonometric angles use degrees, matching OpenSCAD."
+    },
+    {
+      "category": "mathematical",
+      "openscad": "acos",
+      "waifucad": "math OUT acos ...",
+      "layer": "runtime",
+      "notes": "Trigonometric angles use degrees, matching OpenSCAD."
+    },
+    {
+      "category": "mathematical",
+      "openscad": "asin",
+      "waifucad": "math OUT asin ...",
+      "layer": "runtime",
+      "notes": "Trigonometric angles use degrees, matching OpenSCAD."
+    },
+    {
+      "category": "mathematical",
+      "openscad": "atan",
+      "waifucad": "math OUT atan ...",
+      "layer": "runtime",
+      "notes": "Trigonometric angles use degrees, matching OpenSCAD."
+    },
+    {
+      "category": "mathematical",
+      "openscad": "atan2",
+      "waifucad": "math OUT atan2 ...",
+      "layer": "runtime",
+      "notes": "Trigonometric angles use degrees, matching OpenSCAD."
+    },
+    {
+      "category": "mathematical",
+      "openscad": "floor",
+      "waifucad": "math OUT floor ...",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "mathematical",
+      "openscad": "round",
+      "waifucad": "math OUT round ...",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "mathematical",
+      "openscad": "ceil",
+      "waifucad": "math OUT ceil ...",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "mathematical",
+      "openscad": "ln",
+      "waifucad": "math OUT ln ...",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "mathematical",
+      "openscad": "len",
+      "waifucad": "math OUT len ...",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "mathematical",
+      "openscad": "log",
+      "waifucad": "math OUT log ...",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "mathematical",
+      "openscad": "pow",
+      "waifucad": "math OUT pow ...",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "mathematical",
+      "openscad": "sqrt",
+      "waifucad": "math OUT sqrt ...",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "mathematical",
+      "openscad": "exp",
+      "waifucad": "math OUT exp ...",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "mathematical",
+      "openscad": "min",
+      "waifucad": "math OUT min ...",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "mathematical",
+      "openscad": "max",
+      "waifucad": "math OUT max ...",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "mathematical",
+      "openscad": "rands",
+      "waifucad": "rands",
+      "layer": "runtime",
+      "notes": "Deterministic xorshift64* bootstrap with optional seed."
+    },
+    {
+      "category": "mathematical",
+      "openscad": "norm",
+      "waifucad": "norm",
+      "layer": "runtime",
+      "notes": ""
+    },
+    {
+      "category": "mathematical",
+      "openscad": "cross",
+      "waifucad": "cross",
+      "layer": "runtime",
+      "notes": ""
+    }
+  ]
+}
+
+
+

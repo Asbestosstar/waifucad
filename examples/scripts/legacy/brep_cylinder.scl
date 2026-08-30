@@ -1,0 +1,9 @@
+waifucad 0.1
+model brep_cylinder
+param radius 8 mm
+param height 22 mm
+cylinder body radius height
+recompute
+
+
+

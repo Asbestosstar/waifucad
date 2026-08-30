@@ -1,0 +1,114 @@
+# P1 parametric-kernel demonstration in Ruby-like WCS.
+model(:p1_parametric_kernel)
+
+# Named expression parameters with unit checking.
+param(:width, 80.mm)
+param(:depth, 50.mm)
+param_expr(:half_width, :mm, "width / 2")
+param_expr(:wall, :mm, "clamp(half_width / 8, 3 mm, 8 mm)")
+param_expr(:draft_factor, :unitless, "cos(30 deg)")
+param(:height, 20.mm)
+
+# Associative construction geometry: CSYS -> planes/axis -> derived CSYS.
+datum_csys(:work_csys, 0.mm, 0.mm, 0.mm, 1, 0, 0, 0, 1, 0)
+datum_plane_from_csys(:work_xy, :work_csys, :XY)
+datum_plane_from_csys(:work_xz, :work_csys, :XZ)
+datum_plane_offset(:upper_plane, :work_xy, :height)
+datum_axis_from_csys(:work_z, :work_csys, :Z)
+datum_csys_from(:inspection_csys, :work_csys, 5.mm, 10.mm, 15.mm)
+
+# Persistent sketch constraints. The four line entities form a closed region;
+# extrusion consumes the sketch container directly.
+sketch(:plate_sketch, :work_xy)
+sketch_line(:plate_l0, :plate_sketch, 0.mm, 0.mm, :width, 0.mm)
+sketch_line(:plate_l1, :plate_sketch, :width, 0.mm, :width, :depth)
+sketch_line(:plate_l2, :plate_sketch, :width, :depth, 0.mm, :depth)
+sketch_line(:plate_l3, :plate_sketch, 0.mm, :depth, 0.mm, 0.mm)
+sketch_constraint(:horizontal, :plate_h0, :plate_sketch, :plate_l0)
+sketch_constraint(:vertical, :plate_v1, :plate_sketch, :plate_l1)
+sketch_constraint(:horizontal, :plate_h2, :plate_sketch, :plate_l2)
+sketch_constraint(:vertical, :plate_v3, :plate_sketch, :plate_l3)
+sketch_constraint(:coincident, :plate_c01, :plate_sketch, :plate_l0, 1, :plate_l1, 0)
+extrude(:plate, :plate_sketch, :wall)
+
+# Mixed line/arc region: exact extrusion keeps the arc analytic and creates a cylindrical side face.
+sketch(:arc_profile_sketch, :work_xy)
+sketch_line(:arc_diameter, :arc_profile_sketch, 0.mm, -5.mm, 0.mm, 5.mm)
+sketch_arc(:arc_bulge, :arc_profile_sketch, 0.mm, 0.mm, 5.mm, 90.deg, 270.deg)
+extrude(:arc_prism, :arc_profile_sketch, 10.mm)
+
+# General polygon revolution around a datum axis. This rectangular section is
+# away from the axis and therefore makes an exact genus-one hollow body.
+sketch(:ring_sketch, :work_xz)
+sketch_polygon(:ring_profile, :ring_sketch, "10,0;20,0;20,5;10,5")
+revolve_axis(:ring, :ring_profile, :work_z, 360.deg)
+
+# Straight exact sweep and compatible-profile exact loft.
+sketch(:sweep_sketch, :work_xy)
+sketch_circle_at(:sweep_profile, :sweep_sketch, 0.mm, 0.mm, 4.mm)
+line(:sweep_path, 0.mm, 0.mm, 0.mm, 0.mm, 0.mm, 30.mm)
+sweep(:swept_pin, :sweep_profile, :sweep_path)
+
+sketch(:loft_bottom_sketch, :work_xy)
+sketch_polygon(:loft_bottom, :loft_bottom_sketch, "-10,-8;10,-8;10,8;-10,8")
+sketch(:loft_top_sketch, :upper_plane)
+sketch_polygon(:loft_top, :loft_top_sketch, "-6,-5;6,-5;6,5;-6,5")
+loft(:lofted_body, :loft_bottom, :loft_top)
+
+# Exact bootstrap shell/box booleans.
+box(:outer_box, 40.mm, 30.mm, 20.mm)
+shell(:hollow_box, :outer_box, 2.mm)
+box(:box_a, 20.mm, 20.mm, 10.mm)
+box(:box_b, 20.mm, 20.mm, 5.mm)
+translate(:box_b_up, :box_b, 0.mm, 0.mm, 5.mm)
+union(:box_union, :box_a, :box_b_up)
+intersect(:box_intersection, :box_a, :box_b)
+
+torus(:analytic_torus, 30.mm, 5.mm)
+
+# Solver-v2 relations: a line segment symmetric about an axis and a tangent
+# line whose selected endpoint lies on a circle.
+sketch(:relation_sketch, :work_xy)
+sketch_line(:symmetry_axis, :relation_sketch, 0.mm, -10.mm, 0.mm, 10.mm)
+sketch_line(:symmetric_segment, :relation_sketch, -4.mm, 2.mm, 4.mm, 2.mm)
+sketch_circle_at(:tangent_circle, :relation_sketch, 0.mm, 0.mm, 5.mm)
+sketch_line(:tangent_line, :relation_sketch, 5.mm, 0.mm, 5.mm, 8.mm)
+sketch_constraint(:symmetry, :symmetry_relation, :relation_sketch, :symmetric_segment, :symmetry_axis)
+sketch_constraint(:tangent, :tangent_relation, :relation_sketch, :tangent_line, 0, :tangent_circle)
+
+recompute()
+
+# AI-facing inspection of the new state.
+formula = get_parameter_expression(:half_width)
+plane_origin = get_datum_frame_origin(:upper_plane)
+z_direction = get_datum_axis_direction(:work_z)
+constraint_status = get_sketch_constraint_status(:plate_h0)
+constraint_residual = get_sketch_constraint_residual(:tangent_relation)
+relation_dof = get_sketch_dof(:relation_sketch)
+relation_redundant = get_sketch_redundant_constraint_count(:relation_sketch)
+relation_conflicts = get_sketch_conflicting_constraint_count(:relation_sketch)
+relation_converged = get_sketch_solve_converged(:relation_sketch)
+relation_rank = get_sketch_jacobian_rank(:relation_sketch)
+relation_rank_deficiency = get_sketch_rank_deficiency(:relation_sketch)
+relation_nonlinear_iterations = get_sketch_nonlinear_iterations(:relation_sketch)
+relation_under = get_sketch_under_constrained(:relation_sketch)
+ring_genus = get_feature_exact_genus(:ring)
+ring_shells = get_feature_exact_shell_count(:ring)
+lineage_count = get_topology_lineage_count()
+echo_value(:formula)
+echo_value(:plane_origin)
+echo_value(:z_direction)
+echo_value(:constraint_status)
+echo_value(:constraint_residual)
+echo_value(:relation_dof)
+echo_value(:relation_redundant)
+echo_value(:relation_conflicts)
+echo_value(:relation_converged)
+echo_value(:relation_rank)
+echo_value(:relation_rank_deficiency)
+echo_value(:relation_nonlinear_iterations)
+echo_value(:relation_under)
+echo_value(:ring_genus)
+echo_value(:ring_shells)
+echo_value(:lineage_count)
+

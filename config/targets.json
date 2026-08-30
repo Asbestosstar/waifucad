@@ -1,0 +1,692 @@
+{
+  "schemaVersion": 1,
+  "meaning": "WaifuCAD is 64-bit-only. Every target carries bits=64; presence in this file is not a support claim. See status and notes.",
+  "targets": [
+    {
+      "id": "linux-x86_64",
+      "os": "linux",
+      "arch": "x86_64",
+      "status": "bootstrap",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "linux-aarch64",
+      "os": "linux",
+      "arch": "aarch64",
+      "status": "bootstrap",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "linux-riscv64",
+      "os": "linux",
+      "arch": "riscv64",
+      "bits": 64,
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "RV64-only Linux target. Keep ISA extensions/toolchain ABI configurable; do not create an RV32 compatibility target."
+    },
+    {
+      "id": "linux-sparc64",
+      "os": "linux",
+      "arch": "sparc64",
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "linux-ppc64",
+      "os": "linux",
+      "arch": "ppc64",
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "linux-ppc64le",
+      "os": "linux",
+      "arch": "ppc64le",
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "linux-s390x",
+      "os": "linux",
+      "arch": "s390x",
+      "status": "research",
+      "guiPolicy": [
+        "none"
+      ],
+      "graphicsPolicy": [
+        "none"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "linux-ia64",
+      "os": "linux",
+      "arch": "ia64",
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "linux-alpha64",
+      "os": "linux",
+      "arch": "alpha64",
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "linux-tilegx",
+      "os": "linux",
+      "arch": "tilegx",
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "hpux-ia64",
+      "os": "hpux",
+      "arch": "ia64",
+      "status": "research",
+      "guiPolicy": [
+        "motif",
+        "gtk2",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "opengl"
+      ],
+      "notes": "Do not assume Vulkan from historical NVIDIA availability.",
+      "bits": 64
+    },
+    {
+      "id": "hpux-parisc64",
+      "os": "hpux",
+      "arch": "parisc64",
+      "status": "historical",
+      "guiPolicy": [
+        "motif",
+        "gtk2",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "aix-ppc64",
+      "os": "aix",
+      "arch": "ppc64",
+      "status": "research",
+      "guiPolicy": [
+        "motif",
+        "gtk3",
+        "gtk2",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "aix-ppc64le-requested",
+      "os": "aix",
+      "arch": "ppc64le",
+      "status": "research",
+      "guiPolicy": [
+        "none"
+      ],
+      "graphicsPolicy": [
+        "none"
+      ],
+      "notes": "Requested pairing retained for research; do not advertise until an AIX little-endian userland/toolchain is demonstrated.",
+      "bits": 64
+    },
+    {
+      "id": "solaris-x86_64",
+      "os": "solaris",
+      "arch": "x86_64",
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "gtk3",
+        "qt5",
+        "motif",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "Project policy updated from user-confirmed Solaris deployments: prefer GTK4 and Vulkan when their runtime probes succeed; retain GTK3/Qt5/Motif/Xlib and OpenGL fallbacks.",
+      "bits": 64
+    },
+    {
+      "id": "solaris-sparc64",
+      "os": "solaris",
+      "arch": "sparc64",
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "gtk3",
+        "motif",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "Project policy updated from user-confirmed Solaris deployments: prefer GTK4 and Vulkan when their runtime probes succeed; retain GTK3/Motif/Xlib and OpenGL fallbacks.",
+      "bits": 64
+    },
+    {
+      "id": "illumos-x86_64",
+      "os": "illumos",
+      "arch": "x86_64",
+      "status": "research",
+      "guiPolicy": [
+        "gtk3",
+        "qt5",
+        "motif",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "illumos-sparc64",
+      "os": "illumos",
+      "arch": "sparc64",
+      "status": "research",
+      "guiPolicy": [
+        "gtk3",
+        "motif",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "illumos-aarch64",
+      "os": "illumos",
+      "arch": "aarch64",
+      "status": "research",
+      "guiPolicy": [
+        "gtk3",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "Experimental ecosystem target; verify the specific illumos distribution first.",
+      "bits": 64
+    },
+    {
+      "id": "macos-ppc64",
+      "os": "macos",
+      "arch": "ppc64",
+      "status": "historical",
+      "guiPolicy": [
+        "qt4",
+        "qt3",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "opengl"
+      ],
+      "notes": "Historical Mac OS X PowerPC64 compatibility project only.",
+      "bits": 64
+    },
+    {
+      "id": "macos-x86_64",
+      "os": "macos",
+      "arch": "x86_64",
+      "status": "bootstrap",
+      "guiPolicy": [
+        "qt6",
+        "gtk4"
+      ],
+      "graphicsPolicy": [
+        "metal",
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "Vulkan means a portability implementation on macOS; Metal is native.",
+      "bits": 64
+    },
+    {
+      "id": "macos-aarch64",
+      "os": "macos",
+      "arch": "aarch64",
+      "status": "bootstrap",
+      "guiPolicy": [
+        "qt6",
+        "gtk4"
+      ],
+      "graphicsPolicy": [
+        "metal",
+        "vulkan"
+      ],
+      "notes": "Metal preferred.",
+      "bits": 64
+    },
+    {
+      "id": "irix-mips64",
+      "os": "irix",
+      "arch": "mips64",
+      "status": "historical",
+      "guiPolicy": [
+        "motif",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "haiku-x86_64",
+      "os": "haiku",
+      "arch": "x86_64",
+      "status": "research",
+      "guiPolicy": [
+        "qt6",
+        "qt5"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "haiku-aarch64",
+      "os": "haiku",
+      "arch": "aarch64",
+      "status": "research",
+      "guiPolicy": [
+        "qt6",
+        "qt5"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "bsd-x86_64",
+      "os": "bsd-family",
+      "arch": "x86_64",
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "qt5",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "Generic family record; verify FreeBSD/NetBSD/OpenBSD separately because architecture and toolkit availability differ.",
+      "bits": 64
+    },
+    {
+      "id": "bsd-aarch64",
+      "os": "bsd-family",
+      "arch": "aarch64",
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "qt5",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "Generic family record; verify FreeBSD/NetBSD/OpenBSD separately because architecture and toolkit availability differ.",
+      "bits": 64
+    },
+    {
+      "id": "bsd-riscv64",
+      "os": "bsd-family",
+      "arch": "riscv64",
+      "bits": 64,
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "qt5",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "Generic BSD-family RV64 record; verify each concrete BSD independently. No RV32 WaifuCAD target is permitted."
+    },
+    {
+      "id": "bsd-sparc64",
+      "os": "bsd-family",
+      "arch": "sparc64",
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "qt5",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "Generic family record; verify FreeBSD/NetBSD/OpenBSD separately because architecture and toolkit availability differ.",
+      "bits": 64
+    },
+    {
+      "id": "bsd-ia64",
+      "os": "bsd-family",
+      "arch": "ia64",
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "qt5",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "Generic family record; verify FreeBSD/NetBSD/OpenBSD separately because architecture and toolkit availability differ.",
+      "bits": 64
+    },
+    {
+      "id": "bsd-ppc64",
+      "os": "bsd-family",
+      "arch": "ppc64",
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "qt5",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "Generic family record; verify FreeBSD/NetBSD/OpenBSD separately because architecture and toolkit availability differ.",
+      "bits": 64
+    },
+    {
+      "id": "bsd-ppc64le",
+      "os": "bsd-family",
+      "arch": "ppc64le",
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "qt5",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "Generic family record; verify FreeBSD/NetBSD/OpenBSD separately because architecture and toolkit availability differ.",
+      "bits": 64
+    },
+    {
+      "id": "zos-s390x",
+      "os": "zos",
+      "arch": "s390x",
+      "status": "batch_only",
+      "guiPolicy": [
+        "none"
+      ],
+      "graphicsPolicy": [
+        "none"
+      ],
+      "notes": "Batch/USS-oriented base target; no local GUI is assumed.",
+      "bits": 64
+    },
+    {
+      "id": "tru64-alpha64",
+      "os": "tru64",
+      "arch": "alpha64",
+      "status": "historical",
+      "guiPolicy": [
+        "motif",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "openvms-ia64",
+      "os": "openvms",
+      "arch": "ia64",
+      "status": "historical",
+      "guiPolicy": [
+        "none"
+      ],
+      "graphicsPolicy": [
+        "none"
+      ],
+      "notes": "Batch-first until a concrete display bridge is implemented.",
+      "bits": 64
+    },
+    {
+      "id": "openvms-x86_64",
+      "os": "openvms",
+      "arch": "x86_64",
+      "status": "research",
+      "guiPolicy": [
+        "none"
+      ],
+      "graphicsPolicy": [
+        "none"
+      ],
+      "notes": "VSI states no graphics cards are supported on OpenVMS x86-64; keep batch-first.",
+      "bits": 64
+    },
+    {
+      "id": "openvms-alpha64",
+      "os": "openvms",
+      "arch": "alpha64",
+      "status": "historical",
+      "guiPolicy": [
+        "none"
+      ],
+      "graphicsPolicy": [
+        "none"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "openvms-parisc64-requested",
+      "os": "openvms",
+      "arch": "parisc64",
+      "status": "invalid_pairing",
+      "guiPolicy": [
+        "none"
+      ],
+      "graphicsPolicy": [
+        "none"
+      ],
+      "notes": "OpenVMS documented architecture families do not include PA-RISC.",
+      "bits": 64
+    },
+    {
+      "id": "openserver10-x86_64",
+      "os": "openserver10",
+      "arch": "x86_64",
+      "status": "historical",
+      "guiPolicy": [
+        "xlib",
+        "motif"
+      ],
+      "graphicsPolicy": [
+        "opengl"
+      ],
+      "notes": "",
+      "bits": 64
+    },
+    {
+      "id": "webassembly-wasm64-wasip1",
+      "os": "webassembly",
+      "arch": "wasm64",
+      "status": "research",
+      "guiPolicy": [
+        "none"
+      ],
+      "graphicsPolicy": [
+        "none"
+      ],
+      "notes": "64-bit-only Memory64/WASI preview 1 research target. Requires a wasm64-capable D compiler plus a matching wasm64 WASI sysroot; the build refuses the normal wasm32 sysroot.",
+      "bits": 64
+    },
+    {
+      "id": "webassembly-wasm64-wasip2",
+      "os": "webassembly",
+      "arch": "wasm64",
+      "status": "research",
+      "guiPolicy": [
+        "none"
+      ],
+      "graphicsPolicy": [
+        "none"
+      ],
+      "notes": "64-bit-only Memory64/WASI preview 2 research target. Requires a wasm64-capable D compiler plus a matching wasm64 WASI sysroot; the build refuses the normal wasm32 sysroot.",
+      "bits": 64
+    }
+  ]
+}
+
+
+

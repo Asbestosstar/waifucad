@@ -1,0 +1,28 @@
+{
+  "defaultFrontend": "auto",
+  "defaultWidth": 1024,
+  "defaultHeight": 768,
+  "minimumWidth": 800,
+  "minimumHeight": 600,
+  "sectionsRibbon": true,
+  "theme": "nightcore_2008",
+  "background": "waifus/nightcore.png",
+  "frontendPreference": [
+    "gtk4",
+    "qt6",
+    "gtk3",
+    "qt5",
+    "qt4",
+    "gtk2",
+    "motif",
+    "xlib"
+  ],
+  "defaultSection": "modelling",
+  "globalRibbonTabs": [
+    "sections",
+    "mods"
+  ],
+  "homeRibbonGroups": [
+    "scripts"
+  ]
+}

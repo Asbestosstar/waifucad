@@ -1,0 +1,23 @@
+# Ruby-like WaifuCAD Scripting Language (.wcs)
+waifucad(0.1)
+model(:multicore_demo)
+
+param(:width, 80.mm)
+param(:depth, 50.mm)
+param(:thickness, 10.mm)
+param(:boss_radius, 8.mm)
+param(:boss_height, 22.mm)
+param(:edge_radius, 2.mm)
+
+# base and boss are independent depth-zero jobs and may recompute in parallel.
+box(:base, :width, :depth, :thickness)
+cylinder(:boss, :boss_radius, :boss_height)
+
+# These depend on earlier features and therefore run at later scheduler depths.
+union(:combined, :base, :boss)
+fillet(:softened, :combined, :edge_radius)
+extrude(:raised, :softened, 5.mm)
+
+set(:width, 96)
+recompute()
+

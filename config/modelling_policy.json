@@ -1,0 +1,32 @@
+{
+  "preferred_workflow": [
+    "sketch",
+    "extrude",
+    "revolve",
+    "sweep",
+    "loft",
+    "feature_detail"
+  ],
+  "allowed_alternatives": {
+    "rough_curves": {
+      "allowed": true,
+      "recommended": false,
+      "reason": "NX-style free points, lines, arcs, circles and splines are useful for construction, repair, imported references and unusual workflows but do not provide sketch constraint intent."
+    },
+    "direct_parametric_primitives": {
+      "allowed": true,
+      "recommended": false,
+      "reason": "Direct boxes, cylinders, spheres and other primitives are convenient and remain associative, but production design should normally expose design intent through sketches and downstream features."
+    },
+    "dumb_bodies": {
+      "allowed": true,
+      "recommended": false,
+      "associative": false,
+      "reason": "Imported, healed, translated or intentionally non-parametric bodies must remain editable/selectable document objects even when no parent sketch or feature history exists."
+    }
+  },
+  "ai_policy": "AI should prefer sketch-driven feature history unless the user explicitly requests direct primitives, rough geometry, imported/dumb bodies, or the operation is materially simpler and equally maintainable as a direct primitive."
+}
+
+
+

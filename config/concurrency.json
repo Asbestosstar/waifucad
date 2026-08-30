@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "workerPolicy": "automatic",
+  "requestedWorkers": 0,
+  "maximumWorkers": 64,
+  "scheduler": "dependency-depth-persistent-pool",
+  "notes": "Zero workers means detect online logical processors. Independent dirty features at one dependency depth may run concurrently. POSIX helper threads persist and are reused across dispatches; bounded participant queues allow work stealing; nested wc_parallel_for calls execute serially to avoid deadlock/oversubscription. Cancellation tokens stop unscheduled jobs and are now checked inside the sketch solver and WaifuBRep tessellation loops. Dependency depths are still completed in order.",
+  "workerPool": "persistent-posix-helpers",
+  "nestedParallelism": "serialise-nested-dispatch",
+  "workStealing": true,
+  "cancellation": true,
+  "cooperativeCheckpoints": [
+    "sketch-constraint-solver",
+    "waifubrep-tessellation"
+  ]
+}
+

@@ -1,0 +1,10 @@
+waifucad 0.1
+model exact_box
+param width 80 mm
+param depth 50 mm
+param height 10 mm
+box body width depth height
+recompute
+
+
+

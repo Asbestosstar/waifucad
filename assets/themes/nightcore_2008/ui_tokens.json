@@ -1,0 +1,30 @@
+{
+  "id": "nightcore_2008",
+  "colours": {
+    "ribbonTop": "#C95AAE",
+    "ribbonBottom": "#7E3B96",
+    "ribbonHighlight": "#F4A9DF",
+    "chromeLight": "#D9C9E8",
+    "chromeMid": "#88739B",
+    "chromeDark": "#33283D",
+    "viewportBackground": "#171020",
+    "text": "#F6EDF8",
+    "disabledText": "#B6A7BC",
+    "selection": "#E66FC7",
+    "navigatorBackground": "#171321",
+    "navigatorRailBackground": "#100D18"
+  },
+  "metrics": {
+    "menuHeight": 24,
+    "ribbonHeight": 82,
+    "bevel": 1,
+    "cornerRadius": 2,
+    "smallIcon": 16,
+    "largeIcon": 32
+  },
+  "surface": {
+    "gloss": 0.18,
+    "bevelContrast": 0.24,
+    "grain": 0.02
+  }
+}
