@@ -25,13 +25,13 @@ private void initialiseBuiltins() nothrow @nogc
     if (initialised) return;
     auto edit = cast(uint)(SectionCapability.modelling | SectionCapability.documentRead | SectionCapability.documentWrite | SectionCapability.viewport);
     builtins[0] = modellingSectionDescriptor();
-    builtins[1] = makeSection("assembly".ptr, "section.assembly".ptr, "section_assembly".ptr,
+    builtins[1] = makeSection("assembly".ptr, "section.assembly".ptr, "nav_assembly".ptr,
         cast(uint)(SectionCapability.documentRead | SectionCapability.documentWrite | SectionCapability.viewport | SectionCapability.assembly));
     builtins[2] = pmiSectionDescriptor();
-    builtins[3] = makeSection("drawing".ptr, "section.drawing".ptr, "section_drawing".ptr, edit);
-    builtins[4] = makeSection("manufacturing".ptr, "section.manufacturing".ptr, "section_manufacturing".ptr, edit);
-    builtins[5] = makeSection("ai".ptr, "section.ai".ptr, "section_ai".ptr, edit);
-    builtins[6] = makeSection("journalling".ptr, "section.journalling".ptr, "section_journalling".ptr, cast(uint)SectionCapability.documentRead);
+    builtins[3] = makeSection("drawing".ptr, "section.drawing".ptr, "tab_notes".ptr, edit);
+    builtins[4] = makeSection("manufacturing".ptr, "section.manufacturing".ptr, "tab_tools".ptr, edit);
+    builtins[5] = makeSection("ai".ptr, "section.ai".ptr, "nav_ai".ptr, edit);
+    builtins[6] = makeSection("journalling".ptr, "section.journalling".ptr, "cmd_record".ptr, cast(uint)SectionCapability.documentRead);
     initialised = true;
 }
 
@@ -62,6 +62,7 @@ const(SectionRibbonV1)* ribbonForSection(const(char)* id) nothrow @nogc
     // own contextual ribbon descriptors in this bootstrap.
     return null;
 }
+
 
 
 

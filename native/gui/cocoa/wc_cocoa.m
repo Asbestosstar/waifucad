@@ -19,11 +19,10 @@
  * (CAMetalLayer), with scene drawing over it in drawRect, matching GTK4's
  * single drawing-area model.
  *
- * Not yet ported (tracked in AGENTS.MD as Cocoa parity work): data-driven
- * feature dialogues (ribbon commands submit their semantic SCL template and
- * report the result instead), interactive sketch mode with snapping, and
- * the dedicated Metal WaifuBRep renderer (bounds-wireframe display matches
- * GTK4's bootstrap solid display).
+ * Cocoa consumes the same toolkit-neutral feature-dialogue descriptors and
+ * interactive sketch callbacks as GTK4. The dedicated Metal WaifuBRep
+ * renderer remains separate graphics-backend work; until it lands both
+ * front-ends deliberately use the same bootstrap body-bounds display policy.
  *
  * Compile with clang -fobjc-arc; link -framework Cocoa -framework Metal
  * -framework QuartzCore (build.sh does).
@@ -44,6 +43,37 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+#define WC_COCOA_PARITY_BUILD "2026-09-07-v7"
+
+#define WC_COCOA_SNAP_MAX_CANDIDATES 16u
+
+typedef enum WcCocoaSketchTool
+{
+    WC_COCOA_SKETCH_TOOL_LINE = 1,
+    WC_COCOA_SKETCH_TOOL_CIRCLE = 2,
+    WC_COCOA_SKETCH_TOOL_RECTANGLE = 3
+} WcCocoaSketchTool;
+
+typedef struct WcCocoaSnapCandidate
+{
+    uint32_t feature_id;
+    uint32_t point_index;
+    uint32_t kind;
+    double x, y;
+    double screen_x, screen_y;
+    double distance;
+} WcCocoaSnapCandidate;
+
+enum
+{
+    WC_COCOA_SNAP_ENDPOINT = 0u,
+    WC_COCOA_SNAP_CORNER = 1u,
+    WC_COCOA_SNAP_CENTRE = 2u,
+    WC_COCOA_SNAP_ORIGIN = 3u,
+    WC_COCOA_SNAP_X_AXIS = 4u,
+    WC_COCOA_SNAP_Y_AXIS = 5u
+};
+
 /* ------------------------------------------------------------------ */
 /* Bridge state: mirrors the WcGtk4State fields the Cocoa host uses.   */
 /* ------------------------------------------------------------------ */
@@ -52,6 +82,7 @@ typedef struct WcCocoaState
 {
     double yaw, pitch, zoom, pan_x, pan_y;
     double drag_yaw, drag_pitch;
+    double drag_pan_x, drag_pan_y;
     int orbit_dragging;
     double orbit_start_x, orbit_start_y;
 
@@ -61,12 +92,36 @@ typedef struct WcCocoaState
     uint32_t selected_feature_depth;
     uint32_t selected_body_feature_id;
     char selected_feature_name[WC_COCOA_UI_ID_CAPACITY];
+    uint32_t selected_support_kind;
+    uint32_t selected_support_feature_id;
+    uint64_t selected_face_persistent_id;
+    char selected_csys_plane[4];
+    int selected_row_is_feature;
+    int feature_pick_active;
+    size_t feature_pick_field_index;
+    int sketch_support_mode;
 
     uint64_t hover_face_persistent_id;
     uint32_t hover_face_owner_id;
     double pointer_x, pointer_y;
     int pointer_valid;
 
+    int sketch_mode;
+    uint32_t active_sketch_id;
+    char active_sketch_name[WC_COCOA_UI_ID_CAPACITY];
+    WcCocoaSketchTool sketch_tool;
+    int sketch_has_anchor;
+    double sketch_anchor_x, sketch_anchor_y;
+    double sketch_cursor_x, sketch_cursor_y;
+    int sketch_cursor_valid;
+    uint32_t sketch_anchor_snap_feature;
+    uint32_t sketch_anchor_snap_point;
+    WcCocoaSnapCandidate snap_candidates[WC_COCOA_SNAP_MAX_CANDIDATES];
+    size_t snap_candidate_count;
+    int snap_choice_locked;
+    WcCocoaSnapCandidate snap_choice;
+    int snap_ambiguity_ready;
+    double snap_pointer_x, snap_pointer_y;
     int fit_bounds_valid;
     double fit_min_x, fit_min_y, fit_min_z;
     double fit_max_x, fit_max_y, fit_max_z;
@@ -87,6 +142,8 @@ static NSMutableArray *g_panels = nil;         /* retains property/info panels *
 static NSColor *g_navigatorColour = nil;       /* config navigator_background */
 static NSColor *g_railColour = nil;            /* config navigator_rail_background */
 static NSImage *g_nightcore = nil;
+static NSTimer *g_snapTimer = nil;
+static int g_showDiagnosticBodyBounds = 0;
 
 @class WcAppDelegate;
 static WcAppDelegate *g_delegate = nil;
@@ -156,6 +213,531 @@ static const char *WcExactStatusText(uint32_t status)
 /* Icon + caption helpers (GTK4 conventions).                          */
 /* ------------------------------------------------------------------ */
 
+static NSString *WcResolveProjectPath(NSString *relativePath)
+{
+    if (relativePath == nil || relativePath.length == 0)
+        return nil;
+    NSFileManager *files = [NSFileManager defaultManager];
+    if ([relativePath isAbsolutePath] && [files fileExistsAtPath:relativePath])
+        return relativePath;
+
+    NSString *candidate = [[[NSProcessInfo processInfo] environment][@"WC_ASSET_ROOT"] stringByAppendingPathComponent:relativePath];
+    if (candidate != nil && [files fileExistsAtPath:candidate])
+        return candidate;
+    candidate = [[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:relativePath];
+    if ([files fileExistsAtPath:candidate])
+        return candidate;
+
+    NSString *resourcePath = [NSBundle mainBundle].resourcePath;
+    if (resourcePath != nil)
+    {
+        candidate = [resourcePath stringByAppendingPathComponent:relativePath];
+        if ([files fileExistsAtPath:candidate])
+            return candidate;
+    }
+
+    NSString *base = [NSBundle mainBundle].executablePath.stringByDeletingLastPathComponent;
+    for (int depth = 0; base != nil && depth < 8; ++depth)
+    {
+        candidate = [base stringByAppendingPathComponent:relativePath];
+        if ([files fileExistsAtPath:candidate])
+            return candidate;
+        NSString *parent = base.stringByDeletingLastPathComponent;
+        if ([parent isEqualToString:base])
+            break;
+        base = parent;
+    }
+    return nil;
+}
+
+/* AppKit does not provide a portable SVG NSImageRep on all supported macOS
+   releases.  GTK4 loads these project-owned SVGs directly, so Cocoa keeps
+   the exact same assets and provides a deliberately small renderer for the
+   subset used by assets/icons/: svg/g/path/rect/circle/ellipse, inherited
+   fill/stroke, and the M/L/H/V/C/S/A/Z path commands. */
+@interface WcSvgStyle : NSObject <NSCopying>
+@property (strong) NSColor *fillColour;
+@property (strong) NSColor *strokeColour;
+@property CGFloat strokeWidth;
+@property NSLineCapStyle lineCap;
+@property NSLineJoinStyle lineJoin;
+@property CGFloat opacity;
+@end
+
+@implementation WcSvgStyle
+- (id)copyWithZone:(NSZone *)zone
+{
+    (void)zone;
+    WcSvgStyle *copy = [[WcSvgStyle alloc] init];
+    copy.fillColour = self.fillColour;
+    copy.strokeColour = self.strokeColour;
+    copy.strokeWidth = self.strokeWidth;
+    copy.lineCap = self.lineCap;
+    copy.lineJoin = self.lineJoin;
+    copy.opacity = self.opacity;
+    return copy;
+}
+@end
+
+static NSColor *WcSvgColour(NSString *value)
+{
+    if (value == nil || value.length == 0 || [value isEqualToString:@"none"])
+        return nil;
+    if ([value isEqualToString:@"currentColor"])
+        return WcTitlePink();
+    const char *utf8 = value.UTF8String;
+    if (utf8 != NULL && utf8[0] == '#')
+        return WcHex(utf8, nil);
+    return nil;
+}
+
+static void WcSvgSkipSeparators(const char **cursor)
+{
+    if (cursor == NULL || *cursor == NULL)
+        return;
+    while (**cursor == ',' || **cursor == ' ' || **cursor == '\t' || **cursor == '\r' || **cursor == '\n')
+        ++(*cursor);
+}
+
+static int WcSvgReadNumber(const char **cursor, double *value)
+{
+    char *end = NULL;
+    WcSvgSkipSeparators(cursor);
+    if (cursor == NULL || *cursor == NULL || **cursor == '\0')
+        return 0;
+    double parsed = strtod(*cursor, &end);
+    if (end == *cursor)
+        return 0;
+    *cursor = end;
+    if (value != NULL)
+        *value = parsed;
+    return 1;
+}
+
+static int WcSvgReadFlag(const char **cursor, int *value)
+{
+    WcSvgSkipSeparators(cursor);
+    if (cursor == NULL || *cursor == NULL || (**cursor != '0' && **cursor != '1'))
+        return 0;
+    if (value != NULL)
+        *value = **cursor == '1' ? 1 : 0;
+    ++(*cursor);
+    return 1;
+}
+
+static double WcSvgVectorAngle(double ux, double uy, double vx, double vy)
+{
+    double dot = ux * vx + uy * vy;
+    double det = ux * vy - uy * vx;
+    return atan2(det, dot);
+}
+
+@interface WcSvgRenderer : NSObject <NSXMLParserDelegate>
+@property NSRect destination;
+@property double minX;
+@property double minY;
+@property double viewWidth;
+@property double viewHeight;
+@property (strong) NSMutableArray<WcSvgStyle *> *styleStack;
+@end
+
+@implementation WcSvgRenderer
+
+- (instancetype)initWithDestination:(NSRect)destination
+{
+    self = [super init];
+    if (self != nil)
+    {
+        _destination = destination;
+        _minX = 0.0;
+        _minY = 0.0;
+        _viewWidth = 48.0;
+        _viewHeight = 48.0;
+        _styleStack = [NSMutableArray array];
+        WcSvgStyle *base = [[WcSvgStyle alloc] init];
+        base.fillColour = nil;
+        base.strokeColour = nil;
+        base.strokeWidth = 1.0;
+        base.lineCap = NSLineCapStyleButt;
+        base.lineJoin = NSLineJoinStyleMiter;
+        base.opacity = 1.0;
+        [_styleStack addObject:base];
+    }
+    return self;
+}
+
+- (double)scaleX
+{
+    return self.viewWidth != 0.0 ? self.destination.size.width / self.viewWidth : 1.0;
+}
+
+- (double)scaleY
+{
+    return self.viewHeight != 0.0 ? self.destination.size.height / self.viewHeight : 1.0;
+}
+
+- (NSPoint)pointX:(double)x y:(double)y
+{
+    double sx = [self scaleX];
+    double sy = [self scaleY];
+    return NSMakePoint(self.destination.origin.x + (x - self.minX) * sx,
+                       self.destination.origin.y + self.destination.size.height - (y - self.minY) * sy);
+}
+
+- (void)applyAttributes:(NSDictionary<NSString *, NSString *> *)attributes toStyle:(WcSvgStyle *)style
+{
+    NSString *fill = attributes[@"fill"];
+    NSString *stroke = attributes[@"stroke"];
+    NSString *width = attributes[@"stroke-width"];
+    NSString *cap = attributes[@"stroke-linecap"];
+    NSString *join = attributes[@"stroke-linejoin"];
+    NSString *opacity = attributes[@"opacity"];
+    if (fill != nil)
+        style.fillColour = WcSvgColour(fill);
+    if (stroke != nil)
+        style.strokeColour = WcSvgColour(stroke);
+    if (width != nil)
+        style.strokeWidth = width.doubleValue;
+    if ([cap isEqualToString:@"round"])
+        style.lineCap = NSLineCapStyleRound;
+    else if ([cap isEqualToString:@"square"])
+        style.lineCap = NSLineCapStyleSquare;
+    else if ([cap isEqualToString:@"butt"])
+        style.lineCap = NSLineCapStyleButt;
+    if ([join isEqualToString:@"round"])
+        style.lineJoin = NSLineJoinStyleRound;
+    else if ([join isEqualToString:@"bevel"])
+        style.lineJoin = NSLineJoinStyleBevel;
+    else if ([join isEqualToString:@"miter"])
+        style.lineJoin = NSLineJoinStyleMiter;
+    if (opacity != nil)
+        style.opacity *= opacity.doubleValue;
+}
+
+- (void)paintPath:(NSBezierPath *)path style:(WcSvgStyle *)style
+{
+    if (path == nil || style == nil)
+        return;
+    if (style.fillColour != nil)
+    {
+        [[style.fillColour colorWithAlphaComponent:style.fillColour.alphaComponent * style.opacity] setFill];
+        [path fill];
+    }
+    if (style.strokeColour != nil && style.strokeWidth > 0.0)
+    {
+        [[style.strokeColour colorWithAlphaComponent:style.strokeColour.alphaComponent * style.opacity] setStroke];
+        path.lineWidth = style.strokeWidth * 0.5 * ([self scaleX] + [self scaleY]);
+        path.lineCapStyle = style.lineCap;
+        path.lineJoinStyle = style.lineJoin;
+        [path stroke];
+    }
+}
+
+- (void)appendArcToPath:(NSBezierPath *)path
+                   fromX:(double)x1 y:(double)y1
+                      rx:(double)rx ry:(double)ry rotation:(double)rotationDegrees
+                largeArc:(int)largeArc sweep:(int)sweep
+                     toX:(double)x2 y:(double)y2
+{
+    rx = fabs(rx);
+    ry = fabs(ry);
+    if (rx < 1e-12 || ry < 1e-12 || (fabs(x2 - x1) < 1e-12 && fabs(y2 - y1) < 1e-12))
+    {
+        [path lineToPoint:[self pointX:x2 y:y2]];
+        return;
+    }
+
+    double phi = rotationDegrees * M_PI / 180.0;
+    double cosPhi = cos(phi), sinPhi = sin(phi);
+    double dx = (x1 - x2) * 0.5;
+    double dy = (y1 - y2) * 0.5;
+    double x1p = cosPhi * dx + sinPhi * dy;
+    double y1p = -sinPhi * dx + cosPhi * dy;
+    double lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
+    if (lambda > 1.0)
+    {
+        double factor = sqrt(lambda);
+        rx *= factor;
+        ry *= factor;
+    }
+
+    double rx2 = rx * rx, ry2 = ry * ry;
+    double numerator = rx2 * ry2 - rx2 * y1p * y1p - ry2 * x1p * x1p;
+    double denominator = rx2 * y1p * y1p + ry2 * x1p * x1p;
+    double factor = denominator > 0.0 ? sqrt(fmax(0.0, numerator / denominator)) : 0.0;
+    if (largeArc == sweep)
+        factor = -factor;
+    double cxp = factor * (rx * y1p / ry);
+    double cyp = factor * (-ry * x1p / rx);
+    double cx = cosPhi * cxp - sinPhi * cyp + (x1 + x2) * 0.5;
+    double cy = sinPhi * cxp + cosPhi * cyp + (y1 + y2) * 0.5;
+
+    double ux = (x1p - cxp) / rx;
+    double uy = (y1p - cyp) / ry;
+    double vx = (-x1p - cxp) / rx;
+    double vy = (-y1p - cyp) / ry;
+    double theta = WcSvgVectorAngle(1.0, 0.0, ux, uy);
+    double delta = WcSvgVectorAngle(ux, uy, vx, vy);
+    if (!sweep && delta > 0.0)
+        delta -= 2.0 * M_PI;
+    else if (sweep && delta < 0.0)
+        delta += 2.0 * M_PI;
+
+    int segments = (int)ceil(fabs(delta) / (M_PI * 0.5));
+    if (segments < 1)
+        segments = 1;
+    double step = delta / (double)segments;
+    for (int segment = 0; segment < segments; ++segment)
+    {
+        double t0 = theta + step * segment;
+        double t1 = t0 + step;
+        double alpha = (4.0 / 3.0) * tan((t1 - t0) * 0.25);
+        double c0 = cos(t0), s0 = sin(t0), c1 = cos(t1), s1 = sin(t1);
+
+        double p0x = cx + cosPhi * rx * c0 - sinPhi * ry * s0;
+        double p0y = cy + sinPhi * rx * c0 + cosPhi * ry * s0;
+        double p1x = cx + cosPhi * rx * c1 - sinPhi * ry * s1;
+        double p1y = cy + sinPhi * rx * c1 + cosPhi * ry * s1;
+        double d0x = -cosPhi * rx * s0 - sinPhi * ry * c0;
+        double d0y = -sinPhi * rx * s0 + cosPhi * ry * c0;
+        double d1x = -cosPhi * rx * s1 - sinPhi * ry * c1;
+        double d1y = -sinPhi * rx * s1 + cosPhi * ry * c1;
+
+        NSPoint control1 = [self pointX:p0x + alpha * d0x y:p0y + alpha * d0y];
+        NSPoint control2 = [self pointX:p1x - alpha * d1x y:p1y - alpha * d1y];
+        NSPoint endpoint = [self pointX:p1x y:p1y];
+        [path curveToPoint:endpoint controlPoint1:control1 controlPoint2:control2];
+    }
+}
+
+- (NSBezierPath *)pathFromSvgData:(NSString *)data
+{
+    if (data == nil)
+        return nil;
+    const char *cursor = data.UTF8String;
+    NSBezierPath *path = [NSBezierPath bezierPath];
+    char command = 0;
+    double x = 0.0, y = 0.0, subX = 0.0, subY = 0.0;
+    double lastControlX = 0.0, lastControlY = 0.0;
+    int hasLastCubicControl = 0;
+
+    while (cursor != NULL && *cursor != '\0')
+    {
+        WcSvgSkipSeparators(&cursor);
+        if (*cursor == '\0')
+            break;
+        if ((*cursor >= 'A' && *cursor <= 'Z') || (*cursor >= 'a' && *cursor <= 'z'))
+            command = *cursor++;
+        else if (command == 0)
+            break;
+
+        int relative = command >= 'a' && command <= 'z';
+        switch (command)
+        {
+            case 'M': case 'm':
+            {
+                double nx, ny;
+                if (!WcSvgReadNumber(&cursor, &nx) || !WcSvgReadNumber(&cursor, &ny))
+                    return path;
+                if (relative) { nx += x; ny += y; }
+                x = nx; y = ny; subX = x; subY = y;
+                [path moveToPoint:[self pointX:x y:y]];
+                command = relative ? 'l' : 'L';
+                hasLastCubicControl = 0;
+                break;
+            }
+            case 'L': case 'l':
+            {
+                double nx, ny;
+                if (!WcSvgReadNumber(&cursor, &nx) || !WcSvgReadNumber(&cursor, &ny))
+                    return path;
+                if (relative) { nx += x; ny += y; }
+                x = nx; y = ny;
+                [path lineToPoint:[self pointX:x y:y]];
+                hasLastCubicControl = 0;
+                break;
+            }
+            case 'H': case 'h':
+            {
+                double nx;
+                if (!WcSvgReadNumber(&cursor, &nx))
+                    return path;
+                if (relative) nx += x;
+                x = nx;
+                [path lineToPoint:[self pointX:x y:y]];
+                hasLastCubicControl = 0;
+                break;
+            }
+            case 'V': case 'v':
+            {
+                double ny;
+                if (!WcSvgReadNumber(&cursor, &ny))
+                    return path;
+                if (relative) ny += y;
+                y = ny;
+                [path lineToPoint:[self pointX:x y:y]];
+                hasLastCubicControl = 0;
+                break;
+            }
+            case 'C': case 'c':
+            {
+                double x1, y1, x2, y2, nx, ny;
+                if (!WcSvgReadNumber(&cursor, &x1) || !WcSvgReadNumber(&cursor, &y1) ||
+                    !WcSvgReadNumber(&cursor, &x2) || !WcSvgReadNumber(&cursor, &y2) ||
+                    !WcSvgReadNumber(&cursor, &nx) || !WcSvgReadNumber(&cursor, &ny))
+                    return path;
+                if (relative)
+                {
+                    x1 += x; y1 += y; x2 += x; y2 += y; nx += x; ny += y;
+                }
+                [path curveToPoint:[self pointX:nx y:ny]
+                     controlPoint1:[self pointX:x1 y:y1]
+                     controlPoint2:[self pointX:x2 y:y2]];
+                x = nx; y = ny; lastControlX = x2; lastControlY = y2;
+                hasLastCubicControl = 1;
+                break;
+            }
+            case 'S': case 's':
+            {
+                double x2, y2, nx, ny;
+                if (!WcSvgReadNumber(&cursor, &x2) || !WcSvgReadNumber(&cursor, &y2) ||
+                    !WcSvgReadNumber(&cursor, &nx) || !WcSvgReadNumber(&cursor, &ny))
+                    return path;
+                if (relative) { x2 += x; y2 += y; nx += x; ny += y; }
+                double x1 = hasLastCubicControl ? 2.0 * x - lastControlX : x;
+                double y1 = hasLastCubicControl ? 2.0 * y - lastControlY : y;
+                [path curveToPoint:[self pointX:nx y:ny]
+                     controlPoint1:[self pointX:x1 y:y1]
+                     controlPoint2:[self pointX:x2 y:y2]];
+                x = nx; y = ny; lastControlX = x2; lastControlY = y2;
+                hasLastCubicControl = 1;
+                break;
+            }
+            case 'A': case 'a':
+            {
+                double rx, ry, rotation, nx, ny;
+                int largeArc, sweep;
+                if (!WcSvgReadNumber(&cursor, &rx) || !WcSvgReadNumber(&cursor, &ry) ||
+                    !WcSvgReadNumber(&cursor, &rotation) || !WcSvgReadFlag(&cursor, &largeArc) ||
+                    !WcSvgReadFlag(&cursor, &sweep) || !WcSvgReadNumber(&cursor, &nx) ||
+                    !WcSvgReadNumber(&cursor, &ny))
+                    return path;
+                if (relative) { nx += x; ny += y; }
+                [self appendArcToPath:path fromX:x y:y rx:rx ry:ry rotation:rotation
+                            largeArc:largeArc sweep:sweep toX:nx y:ny];
+                x = nx; y = ny;
+                hasLastCubicControl = 0;
+                break;
+            }
+            case 'Z': case 'z':
+                [path closePath];
+                x = subX; y = subY;
+                command = 0;
+                hasLastCubicControl = 0;
+                break;
+            default:
+                return path;
+        }
+    }
+    return path;
+}
+
+- (void)parser:(NSXMLParser *)parser didStartElement:(NSString *)elementName namespaceURI:(NSString *)namespaceURI
+ qualifiedName:(NSString *)qName attributes:(NSDictionary<NSString *, NSString *> *)attributeDict
+{
+    (void)parser; (void)namespaceURI; (void)qName;
+    WcSvgStyle *parent = self.styleStack.lastObject;
+    WcSvgStyle *style = [parent copy];
+    [self applyAttributes:attributeDict toStyle:style];
+
+    if ([elementName isEqualToString:@"svg"])
+    {
+        NSString *viewBox = attributeDict[@"viewBox"];
+        if (viewBox != nil)
+        {
+            NSScanner *scanner = [NSScanner scannerWithString:viewBox];
+            scanner.charactersToBeSkipped = [NSCharacterSet characterSetWithCharactersInString:@" ,\t\r\n"];
+            double values[4] = {0.0, 0.0, 48.0, 48.0};
+            BOOL ok = YES;
+            for (int i = 0; i < 4; ++i)
+                if (![scanner scanDouble:&values[i]]) { ok = NO; break; }
+            if (ok && values[2] > 0.0 && values[3] > 0.0)
+            {
+                self.minX = values[0]; self.minY = values[1];
+                self.viewWidth = values[2]; self.viewHeight = values[3];
+            }
+        }
+        [self.styleStack addObject:style];
+        return;
+    }
+    if ([elementName isEqualToString:@"g"])
+    {
+        [self.styleStack addObject:style];
+        return;
+    }
+
+    NSBezierPath *path = nil;
+    if ([elementName isEqualToString:@"path"])
+    {
+        path = [self pathFromSvgData:attributeDict[@"d"]];
+    }
+    else if ([elementName isEqualToString:@"circle"])
+    {
+        double cx = [attributeDict[@"cx"] doubleValue], cy = [attributeDict[@"cy"] doubleValue];
+        double r = [attributeDict[@"r"] doubleValue];
+        NSPoint lowerLeft = [self pointX:cx - r y:cy + r];
+        path = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(lowerLeft.x, lowerLeft.y,
+            2.0 * r * [self scaleX], 2.0 * r * [self scaleY])];
+    }
+    else if ([elementName isEqualToString:@"ellipse"])
+    {
+        double cx = [attributeDict[@"cx"] doubleValue], cy = [attributeDict[@"cy"] doubleValue];
+        double rx = [attributeDict[@"rx"] doubleValue], ry = [attributeDict[@"ry"] doubleValue];
+        NSPoint lowerLeft = [self pointX:cx - rx y:cy + ry];
+        path = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(lowerLeft.x, lowerLeft.y,
+            2.0 * rx * [self scaleX], 2.0 * ry * [self scaleY])];
+    }
+    else if ([elementName isEqualToString:@"rect"])
+    {
+        double x = [attributeDict[@"x"] doubleValue], y = [attributeDict[@"y"] doubleValue];
+        double width = [attributeDict[@"width"] doubleValue], height = [attributeDict[@"height"] doubleValue];
+        double rx = [attributeDict[@"rx"] doubleValue], ry = [attributeDict[@"ry"] doubleValue];
+        if (ry <= 0.0) ry = rx;
+        if (rx <= 0.0) rx = ry;
+        NSPoint lowerLeft = [self pointX:x y:y + height];
+        NSRect rect = NSMakeRect(lowerLeft.x, lowerLeft.y, width * [self scaleX], height * [self scaleY]);
+        path = (rx > 0.0 || ry > 0.0)
+            ? [NSBezierPath bezierPathWithRoundedRect:rect xRadius:rx * [self scaleX] yRadius:ry * [self scaleY]]
+            : [NSBezierPath bezierPathWithRect:rect];
+    }
+    if (path != nil)
+        [self paintPath:path style:style];
+}
+
+- (void)parser:(NSXMLParser *)parser didEndElement:(NSString *)elementName namespaceURI:(NSString *)namespaceURI qualifiedName:(NSString *)qName
+{
+    (void)parser; (void)namespaceURI; (void)qName;
+    if (([elementName isEqualToString:@"g"] || [elementName isEqualToString:@"svg"]) && self.styleStack.count > 1)
+        [self.styleStack removeLastObject];
+}
+@end
+
+static NSImage *WcRenderSvgIcon(NSString *path, CGFloat size)
+{
+    NSData *data = path != nil ? [NSData dataWithContentsOfFile:path] : nil;
+    if (data == nil)
+        return nil;
+    NSImage *image = [NSImage imageWithSize:NSMakeSize(size, size) flipped:NO drawingHandler:^BOOL(NSRect destinationRect) {
+        WcSvgRenderer *renderer = [[WcSvgRenderer alloc] initWithDestination:destinationRect];
+        NSXMLParser *parser = [[NSXMLParser alloc] initWithData:data];
+        parser.delegate = renderer;
+        return [parser parse];
+    }];
+    image.size = NSMakeSize(size, size);
+    return image;
+}
+
+
 static NSImage *WcLoadIcon(const char *name, CGFloat size)
 {
     if (name == NULL || name[0] == '\0')
@@ -167,18 +749,29 @@ static NSImage *WcLoadIcon(const char *name, CGFloat size)
     if (cached != nil)
         return cached == [NSNull null] ? nil : cached;
 
-    NSString *path = [NSString stringWithFormat:@"assets/icons/%s.svg", name];
+    NSString *relative = [NSString stringWithFormat:@"assets/icons/%s.svg", name];
+    NSString *path = WcResolveProjectPath(relative);
     NSImage *image = nil;
-    if ([[NSFileManager defaultManager] fileExistsAtPath:path])
+    if (path != nil)
     {
-        image = [[NSImage alloc] initWithContentsOfFile:path];
+        /* Rasterise the project-owned SVG first.  AppKit may return a non-nil
+           NSImage for an SVG while still giving standard button cells no
+           drawable bitmap representation.  The Cocoa ribbon therefore uses
+           the same source SVG but turns it into a deterministic NSImage itself. */
+        image = WcRenderSvgIcon(path, size);
+        if (image == nil)
+            image = [[NSImage alloc] initWithContentsOfFile:path];
         if (image != nil)
             image.size = NSMakeSize(size, size);
     }
     if (image != nil)
         g_iconCache[key] = image;
     else
+    {
+        fprintf(stderr, "WaifuCAD Cocoa: could not load icon '%s' (%s)\n",
+                name, path != nil ? path.UTF8String : "asset path not found");
         g_iconCache[key] = [NSNull null];
+    }
     return image;
 }
 
@@ -460,6 +1053,202 @@ static uint64_t WcHitTestPlanarFace(int width, int height, double x, double y, u
     return hit;
 }
 
+
+static void WcSketchWorldPoint(const WcCocoaSketchGeometryRow *row, double x, double y,
+                               double *wx, double *wy, double *wz)
+{
+    if (row == NULL || wx == NULL || wy == NULL || wz == NULL)
+        return;
+    *wx = row->frame_origin[0] + row->frame_x_axis[0] * x + row->frame_y_axis[0] * y;
+    *wy = row->frame_origin[1] + row->frame_x_axis[1] * x + row->frame_y_axis[1] * y;
+    *wz = row->frame_origin[2] + row->frame_x_axis[2] * x + row->frame_y_axis[2] * y;
+}
+
+static double WcScreenSegmentDistance(double px, double py,
+                                      double ax, double ay, double bx, double by)
+{
+    double dx = bx - ax;
+    double dy = by - ay;
+    double length2 = dx * dx + dy * dy;
+    if (length2 <= 1.0e-12)
+        return hypot(px - ax, py - ay);
+    double t = ((px - ax) * dx + (py - ay) * dy) / length2;
+    t = WcClamp(t, 0.0, 1.0);
+    return hypot(px - (ax + dx * t), py - (ay + dy * t));
+}
+
+static uint32_t WcHitTestSketch(int width, int height, double x, double y)
+{
+    WcCocoaFeatureRow features[WC_COCOA_FEATURE_ROW_CAPACITY];
+    WcCocoaSketchGeometryRow geometry[WC_COCOA_FEATURE_ROW_CAPACITY];
+    WcCocoaModelSnapshot snapshot;
+    if (g_callbacks.feature_rows == NULL || g_callbacks.sketch_geometry_rows == NULL)
+        return 0;
+    WcGetSnapshot(&snapshot);
+    WcViewTransform transform = WcMakeViewTransform(width, height, &snapshot);
+    if (!transform.valid)
+        return 0;
+    size_t featureCount = g_callbacks.feature_rows(g_userData, features, WC_COCOA_FEATURE_ROW_CAPACITY);
+    if (featureCount > WC_COCOA_FEATURE_ROW_CAPACITY)
+        featureCount = WC_COCOA_FEATURE_ROW_CAPACITY;
+    uint32_t bestId = 0;
+    double bestDistance = 9.0;
+    for (size_t fi = 0; fi < featureCount; ++fi)
+    {
+        if (features[fi].kind != WC_COCOA_FEATURE_KIND_SKETCH)
+            continue;
+        size_t count = g_callbacks.sketch_geometry_rows(g_userData, features[fi].id,
+                                                         geometry, WC_COCOA_FEATURE_ROW_CAPACITY);
+        if (count > WC_COCOA_FEATURE_ROW_CAPACITY)
+            count = WC_COCOA_FEATURE_ROW_CAPACITY;
+        for (size_t gi = 0; gi < count; ++gi)
+        {
+            WcCocoaSketchGeometryRow *row = &geometry[gi];
+            if (!row->frame_valid)
+                continue;
+            double distance = 1.0e30;
+            if (row->kind == WC_COCOA_FEATURE_KIND_SKETCH_LINE)
+            {
+                double wx0, wy0, wz0, wx1, wy1, wz1, sx0, sy0, sx1, sy1;
+                WcSketchWorldPoint(row, row->values[0], row->values[1], &wx0, &wy0, &wz0);
+                WcSketchWorldPoint(row, row->values[2], row->values[3], &wx1, &wy1, &wz1);
+                WcModelToScreen(&transform, wx0, wy0, wz0, &sx0, &sy0);
+                WcModelToScreen(&transform, wx1, wy1, wz1, &sx1, &sy1);
+                distance = WcScreenSegmentDistance(x, y, sx0, sy0, sx1, sy1);
+            }
+            else if (row->kind == WC_COCOA_FEATURE_KIND_SKETCH_RECTANGLE)
+            {
+                static const int edges[4][2] = {{0,1},{1,2},{2,3},{3,0}};
+                double px[4], py[4];
+                double cx[4] = {row->values[0], row->values[0] + row->values[2],
+                                row->values[0] + row->values[2], row->values[0]};
+                double cy[4] = {row->values[1], row->values[1],
+                                row->values[1] + row->values[3], row->values[1] + row->values[3]};
+                for (int corner = 0; corner < 4; ++corner)
+                {
+                    double wx, wy, wz;
+                    WcSketchWorldPoint(row, cx[corner], cy[corner], &wx, &wy, &wz);
+                    WcModelToScreen(&transform, wx, wy, wz, &px[corner], &py[corner]);
+                }
+                for (int edge = 0; edge < 4; ++edge)
+                {
+                    double candidate = WcScreenSegmentDistance(x, y,
+                        px[edges[edge][0]], py[edges[edge][0]], px[edges[edge][1]], py[edges[edge][1]]);
+                    if (candidate < distance)
+                        distance = candidate;
+                }
+            }
+            else if (row->kind == WC_COCOA_FEATURE_KIND_SKETCH_CIRCLE ||
+                     row->kind == WC_COCOA_FEATURE_KIND_SKETCH_ARC)
+            {
+                double start = 0.0, end = 2.0 * M_PI;
+                if (row->kind == WC_COCOA_FEATURE_KIND_SKETCH_ARC)
+                {
+                    start = row->values[3] * M_PI / 180.0;
+                    end = row->values[4] * M_PI / 180.0;
+                    if (end < start)
+                        end += 2.0 * M_PI;
+                }
+                double previousX = 0.0, previousY = 0.0;
+                for (int segment = 0; segment <= 48; ++segment)
+                {
+                    double t = start + (end - start) * ((double)segment / 48.0);
+                    double wx, wy, wz, sx, sy;
+                    WcSketchWorldPoint(row,
+                        row->values[0] + cos(t) * fabs(row->values[2]),
+                        row->values[1] + sin(t) * fabs(row->values[2]),
+                        &wx, &wy, &wz);
+                    WcModelToScreen(&transform, wx, wy, wz, &sx, &sy);
+                    if (segment != 0)
+                    {
+                        double candidate = WcScreenSegmentDistance(x, y, previousX, previousY, sx, sy);
+                        if (candidate < distance)
+                            distance = candidate;
+                    }
+                    previousX = sx;
+                    previousY = sy;
+                }
+            }
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                bestId = features[fi].id;
+            }
+        }
+    }
+    return bestId;
+}
+
+static int WcHitTestCsysPlane(int width, int height, double x, double y,
+                              uint32_t *featureId, char *plane, size_t planeCapacity)
+{
+    WcCocoaCsysRow rows[WC_COCOA_CSYS_ROW_CAPACITY];
+    WcCocoaModelSnapshot snapshot;
+    if (featureId != NULL)
+        *featureId = 0;
+    if (plane != NULL && planeCapacity != 0)
+        plane[0] = '\0';
+    if (g_callbacks.csys_rows == NULL)
+        return 0;
+    WcGetSnapshot(&snapshot);
+    WcViewTransform transform = (snapshot.bounds_valid || g_state.fit_bounds_valid)
+        ? WcMakeViewTransform(width, height, &snapshot)
+        : WcMakeEmptyCsysTransform(width, height);
+    if (!transform.valid)
+        return 0;
+    size_t count = g_callbacks.csys_rows(g_userData, rows, WC_COCOA_CSYS_ROW_CAPACITY);
+    if (count > WC_COCOA_CSYS_ROW_CAPACITY)
+        count = WC_COCOA_CSYS_ROW_CAPACITY;
+    static const char *names[3] = {"XY", "YZ", "XZ"};
+    static const double quadrant[4][2] = {{0,0},{1,0},{1,1},{0,1}};
+    double length = 12.0;
+    if (snapshot.bounds_valid || g_state.fit_bounds_valid)
+    {
+        double dx, dy, dz;
+        if (g_state.fit_bounds_valid)
+        {
+            dx = g_state.fit_max_x - g_state.fit_min_x;
+            dy = g_state.fit_max_y - g_state.fit_min_y;
+            dz = g_state.fit_max_z - g_state.fit_min_z;
+        }
+        else
+        {
+            dx = snapshot.max_x - snapshot.min_x;
+            dy = snapshot.max_y - snapshot.min_y;
+            dz = snapshot.max_z - snapshot.min_z;
+        }
+        double diagonal = sqrt(dx*dx + dy*dy + dz*dz);
+        if (diagonal > 1e-6)
+            length = WcClamp(diagonal * 0.18, 5.0, 100.0);
+    }
+    double sideSize = length * 0.62;
+    for (size_t i = 0; i < count; ++i)
+    {
+        for (int pi = 0; pi < 3; ++pi)
+        {
+            const double *a = pi == 0 ? rows[i].x_axis : (pi == 1 ? rows[i].y_axis : rows[i].x_axis);
+            const double *b = pi == 0 ? rows[i].y_axis : rows[i].z_axis;
+            double polygon[8];
+            for (int corner = 0; corner < 4; ++corner)
+            {
+                double wx = rows[i].origin[0] + a[0] * sideSize * quadrant[corner][0] + b[0] * sideSize * quadrant[corner][1];
+                double wy = rows[i].origin[1] + a[1] * sideSize * quadrant[corner][0] + b[1] * sideSize * quadrant[corner][1];
+                double wz = rows[i].origin[2] + a[2] * sideSize * quadrant[corner][0] + b[2] * sideSize * quadrant[corner][1];
+                WcModelToScreen(&transform, wx, wy, wz, &polygon[corner * 2], &polygon[corner * 2 + 1]);
+            }
+            if (WcPointInPolygon(polygon, 4, x, y))
+            {
+                if (featureId != NULL)
+                    *featureId = rows[i].feature_id;
+                if (plane != NULL && planeCapacity != 0)
+                    (void)snprintf(plane, planeCapacity, "%s", names[pi]);
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 static int WcFeatureNameForId(uint32_t featureId, char *output, size_t capacity)
 {
     WcCocoaFeatureRow rows[WC_COCOA_FEATURE_ROW_CAPACITY];
@@ -488,6 +1277,7 @@ static int WcFeatureNameForId(uint32_t featureId, char *output, size_t capacity)
 
 @interface WcRow : NSObject
 @property (nonatomic, copy) NSString *text;
+@property (nonatomic, copy) NSString *featureName;
 @property (nonatomic) uint32_t featureId;
 @property (nonatomic) uint32_t featureKind;
 @property (nonatomic) uint32_t exactStatus;
@@ -495,6 +1285,7 @@ static int WcFeatureNameForId(uint32_t featureId, char *output, size_t capacity)
 @property (nonatomic) uint32_t supportKind;
 @property (nonatomic) uint32_t supportFeatureId;
 @property (nonatomic) uint64_t faceId;
+@property (nonatomic, copy) NSString *csysPlane;
 @property (nonatomic) BOOL realFeature;
 @end
 
@@ -541,11 +1332,29 @@ static int WcFeatureNameForId(uint32_t featureId, char *output, size_t capacity)
 @property (strong) NSTextField *rendererStatus;
 @property (strong) NSMutableArray<NSString *> *commandIds;
 @property (strong) NSMutableArray<NSString *> *sectionIds;
+@property (strong) NSPanel *featureDialogPanel;
+@property (strong) NSMutableArray<NSControl *> *featureDialogEditors;
+@property (nonatomic) const WcFeatureDialogueDescriptorV1 *featureDialogDescriptor;
+@property (nonatomic) uint32_t featureDialogFeatureId;
 @property (nonatomic) BOOL programmaticSelection;
 - (void)setCommandStatus:(NSString *)text;
+- (void)showFeatureDialogue:(const WcFeatureDialogueDescriptorV1 *)descriptor featureId:(uint32_t)featureId;
+- (BOOL)acceptFeaturePick:(uint32_t)featureId name:(const char *)featureName;
+- (void)beginNewSketch;
+- (void)beginEditSketch:(uint32_t)sketchId;
+- (void)finishSketch;
+- (void)snapTimerFired:(NSTimer *)timer;
+- (void)showSnapChoiceMenuForView:(NSView *)view;
+- (void)commitSketchX:(double)x y:(double)y snapFeature:(uint32_t)snapFeature snapPoint:(uint32_t)snapPoint;
+- (void)sketchLineTool:(id)sender;
+- (void)sketchCircleTool:(id)sender;
+- (void)sketchRectangleTool:(id)sender;
+- (void)finishSketchClicked:(id)sender;
+- (void)chooseSnapCandidate:(NSMenuItem *)sender;
 - (void)focusCommandLine;
 - (void)syncNavigatorSelectionToState;
 - (void)reloadNavigatorKeepingSelection;
+- (void)layoutNavigatorTable;
 - (void)updateStatus;
 - (void)rebuildRibbon;
 - (void)buildUiWithConfig:(const WcCocoaWindowConfig *)config;
@@ -565,6 +1374,8 @@ static int WcFeatureNameForId(uint32_t featureId, char *output, size_t capacity)
 
 @implementation WcPanelView
 - (BOOL)isFlipped { return self.flippedLayout; }
+
+
 - (void)drawRect:(NSRect)dirtyRect
 {
     (void)dirtyRect;
@@ -620,6 +1431,65 @@ static int WcFeatureNameForId(uint32_t featureId, char *output, size_t capacity)
     NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:self.bounds xRadius:8 yRadius:8];
     [WcCommandPanel() setFill];
     [path fill];
+}
+@end
+
+/* Ribbon command button.  GTK4 builds these as a vertical image + label
+   box inside the button.  A stock AppKit rounded NSButton instead collapses
+   to the native small pill presentation and can omit the image entirely.
+   Draw the command cell ourselves so Cocoa uses the full fixed GTK4 density
+   rectangle and the exact same project SVG above the caption. */
+@interface WcRibbonButton : NSButton
+@property (nonatomic) CGFloat iconExtent;
+@end
+
+@implementation WcRibbonButton
+- (BOOL)isFlipped { return NO; }
+
+- (void)drawRect:(NSRect)dirtyRect
+{
+    (void)dirtyRect;
+    CGFloat alpha = self.enabled ? 1.0 : 0.42;
+    NSRect cellRect = NSInsetRect(self.bounds, 1.0, 1.0);
+    NSBezierPath *background = [NSBezierPath bezierPathWithRoundedRect:cellRect xRadius:4.0 yRadius:4.0];
+    NSColor *fill = self.cell.highlighted
+        ? WcTabActiveBackground()
+        : [WcRibbonBackground() colorWithAlphaComponent:0.42];
+    [[fill colorWithAlphaComponent:fill.alphaComponent * alpha] setFill];
+    [background fill];
+    [[WcGroupBorder() colorWithAlphaComponent:0.72 * alpha] setStroke];
+    background.lineWidth = 1.0;
+    [background stroke];
+
+    CGFloat labelHeight = self.title.length > 0 ? (self.bounds.size.height <= 54.0 ? 18.0 : 24.0) : 0.0;
+    CGFloat iconExtent = self.iconExtent > 0.0 ? self.iconExtent : 22.0;
+    iconExtent = MIN(iconExtent, MAX(0.0, self.bounds.size.width - 8.0));
+    iconExtent = MIN(iconExtent, MAX(0.0, self.bounds.size.height - labelHeight - 9.0));
+    if (self.image != nil && iconExtent > 1.0)
+    {
+        CGFloat iconX = floor((self.bounds.size.width - iconExtent) * 0.5);
+        CGFloat iconY = self.bounds.size.height - iconExtent - 5.0;
+        [self.image drawInRect:NSMakeRect(iconX, iconY, iconExtent, iconExtent)
+                      fromRect:NSZeroRect
+                     operation:NSCompositingOperationSourceOver
+                      fraction:alpha
+                respectFlipped:YES
+                         hints:nil];
+    }
+
+    if (self.title.length > 0)
+    {
+        NSMutableParagraphStyle *paragraph = [[NSMutableParagraphStyle alloc] init];
+        paragraph.alignment = NSTextAlignmentCenter;
+        paragraph.lineBreakMode = NSLineBreakByWordWrapping;
+        NSDictionary *attributes = @{
+            NSFontAttributeName : [NSFont systemFontOfSize:9],
+            NSForegroundColorAttributeName : [WcTextMain() colorWithAlphaComponent:alpha],
+            NSParagraphStyleAttributeName : paragraph
+        };
+        NSRect titleRect = NSMakeRect(3.0, 2.0, MAX(0.0, self.bounds.size.width - 6.0), labelHeight);
+        [self.title drawInRect:titleRect withAttributes:attributes];
+    }
 }
 @end
 
@@ -687,7 +1557,373 @@ static void WcDrawText(const char *text, double x, double gtkY, double height, N
     [[NSString stringWithUTF8String:text] drawAtPoint:NSMakePoint(x, height - gtkY) withAttributes:attributes];
 }
 
+static double WcSketchPixelsPerMm(void)
+{
+    return WcClamp(7.5 * g_state.zoom, 0.2, 240.0);
+}
+
+static void WcSketchToScreen(int width, int height, double x, double y, double *sx, double *sy)
+{
+    double scale = WcSketchPixelsPerMm();
+    *sx = width * 0.5 + g_state.pan_x + x * scale;
+    *sy = height * 0.5 + g_state.pan_y - y * scale;
+}
+
+static void WcScreenToSketch(int width, int height, double sx, double sy, double *x, double *y)
+{
+    double scale = WcSketchPixelsPerMm();
+    *x = (sx - width * 0.5 - g_state.pan_x) / scale;
+    *y = -(sy - height * 0.5 - g_state.pan_y) / scale;
+}
+
+static void WcClearSnapTimer(void)
+{
+    if (g_snapTimer != nil)
+    {
+        [g_snapTimer invalidate];
+        g_snapTimer = nil;
+    }
+    g_state.snap_ambiguity_ready = 0;
+}
+
+static void WcSortSnapCandidates(void)
+{
+    for (size_t i = 1; i < g_state.snap_candidate_count; ++i)
+    {
+        WcCocoaSnapCandidate key = g_state.snap_candidates[i];
+        size_t j = i;
+        while (j > 0 && g_state.snap_candidates[j - 1].distance > key.distance)
+        {
+            g_state.snap_candidates[j] = g_state.snap_candidates[j - 1];
+            --j;
+        }
+        g_state.snap_candidates[j] = key;
+    }
+}
+
+static void WcAddSnapCandidate(uint32_t featureId, uint32_t pointIndex, uint32_t kind,
+                               double x, double y, double screenX, double screenY,
+                               double pointerX, double pointerY, double radiusPx)
+{
+    if (g_state.snap_candidate_count >= WC_COCOA_SNAP_MAX_CANDIDATES)
+        return;
+    double distance = hypot(screenX - pointerX, screenY - pointerY);
+    if (distance > radiusPx)
+        return;
+    WcCocoaSnapCandidate *candidate = &g_state.snap_candidates[g_state.snap_candidate_count++];
+    candidate->feature_id = featureId;
+    candidate->point_index = pointIndex;
+    candidate->kind = kind;
+    candidate->x = x;
+    candidate->y = y;
+    candidate->screen_x = screenX;
+    candidate->screen_y = screenY;
+    candidate->distance = distance;
+}
+
+static void WcUpdateSnapCandidates(int width, int height, double pointerX, double pointerY)
+{
+    WcCocoaSketchGeometryRow rows[WC_COCOA_FEATURE_ROW_CAPACITY];
+    size_t count = 0;
+    const double radiusPx = 15.0;
+    const double axisRadiusPx = 8.0;
+    if (!g_state.sketch_mode)
+        return;
+    BOOL sameHover = hypot(pointerX - g_state.snap_pointer_x, pointerY - g_state.snap_pointer_y) < 3.0;
+    g_state.snap_candidate_count = 0;
+    if (g_callbacks.sketch_geometry_rows != NULL)
+        count = g_callbacks.sketch_geometry_rows(g_userData, g_state.active_sketch_id, rows, WC_COCOA_FEATURE_ROW_CAPACITY);
+    if (count > WC_COCOA_FEATURE_ROW_CAPACITY)
+        count = WC_COCOA_FEATURE_ROW_CAPACITY;
+
+    for (size_t i = 0; i < count && g_state.snap_candidate_count < WC_COCOA_SNAP_MAX_CANDIDATES; ++i)
+    {
+        WcCocoaSketchGeometryRow *row = &rows[i];
+        if (row->kind == WC_COCOA_FEATURE_KIND_SKETCH_LINE)
+        {
+            for (int endpoint = 0; endpoint < 2; ++endpoint)
+            {
+                double ex = row->values[endpoint ? 2 : 0];
+                double ey = row->values[endpoint ? 3 : 1];
+                double px, py;
+                WcSketchToScreen(width, height, ex, ey, &px, &py);
+                WcAddSnapCandidate(row->id, (uint32_t)endpoint, WC_COCOA_SNAP_ENDPOINT,
+                                   ex, ey, px, py, pointerX, pointerY, radiusPx);
+            }
+        }
+        else if (row->kind == WC_COCOA_FEATURE_KIND_SKETCH_RECTANGLE)
+        {
+            double x = row->values[0], y = row->values[1], w = row->values[2], h = row->values[3];
+            double corners[4][2] = {{x,y},{x+w,y},{x+w,y+h},{x,y+h}};
+            for (int corner = 0; corner < 4; ++corner)
+            {
+                double px, py;
+                WcSketchToScreen(width, height, corners[corner][0], corners[corner][1], &px, &py);
+                WcAddSnapCandidate(row->id, (uint32_t)corner, WC_COCOA_SNAP_CORNER,
+                                   corners[corner][0], corners[corner][1], px, py,
+                                   pointerX, pointerY, radiusPx);
+            }
+        }
+        else if (row->kind == WC_COCOA_FEATURE_KIND_SKETCH_CIRCLE)
+        {
+            double cx = row->values[0], cy = row->values[1], r = fabs(row->values[2]);
+            double points[5][2] = {{cx,cy},{cx+r,cy},{cx-r,cy},{cx,cy+r},{cx,cy-r}};
+            for (int point = 0; point < 5; ++point)
+            {
+                double px, py;
+                WcSketchToScreen(width, height, points[point][0], points[point][1], &px, &py);
+                WcAddSnapCandidate(row->id, (uint32_t)point,
+                                   point == 0 ? WC_COCOA_SNAP_CENTRE : WC_COCOA_SNAP_ENDPOINT,
+                                   points[point][0], points[point][1], px, py, pointerX, pointerY, radiusPx);
+            }
+        }
+        else if (row->kind == WC_COCOA_FEATURE_KIND_SKETCH_ARC)
+        {
+            double cx = row->values[0], cy = row->values[1], r = fabs(row->values[2]);
+            double angles[2] = {row->values[3] * M_PI / 180.0, row->values[4] * M_PI / 180.0};
+            double px, py;
+            WcSketchToScreen(width, height, cx, cy, &px, &py);
+            WcAddSnapCandidate(row->id, 2u, WC_COCOA_SNAP_CENTRE, cx, cy, px, py,
+                               pointerX, pointerY, radiusPx);
+            for (int point = 0; point < 2; ++point)
+            {
+                double ex = cx + cos(angles[point]) * r;
+                double ey = cy + sin(angles[point]) * r;
+                WcSketchToScreen(width, height, ex, ey, &px, &py);
+                WcAddSnapCandidate(row->id, (uint32_t)point, WC_COCOA_SNAP_ENDPOINT,
+                                   ex, ey, px, py, pointerX, pointerY, radiusPx);
+            }
+        }
+    }
+
+    double originX, originY, rawX, rawY;
+    WcSketchToScreen(width, height, 0.0, 0.0, &originX, &originY);
+    WcAddSnapCandidate(0u, 0u, WC_COCOA_SNAP_ORIGIN, 0.0, 0.0, originX, originY,
+                       pointerX, pointerY, radiusPx);
+    WcScreenToSketch(width, height, pointerX, pointerY, &rawX, &rawY);
+    if (g_state.snap_candidate_count == 0 && hypot(pointerX - originX, pointerY - originY) > radiusPx * 1.25)
+    {
+        double ax, ay;
+        WcSketchToScreen(width, height, rawX, 0.0, &ax, &ay);
+        WcAddSnapCandidate(0u, 0u, WC_COCOA_SNAP_X_AXIS, rawX, 0.0, ax, ay,
+                           pointerX, pointerY, axisRadiusPx);
+        WcSketchToScreen(width, height, 0.0, rawY, &ax, &ay);
+        WcAddSnapCandidate(0u, 0u, WC_COCOA_SNAP_Y_AXIS, 0.0, rawY, ax, ay,
+                           pointerX, pointerY, axisRadiusPx);
+    }
+
+    WcSortSnapCandidates();
+    if (g_state.snap_candidate_count > 1)
+    {
+        if (!sameHover || (g_snapTimer == nil && !g_state.snap_ambiguity_ready))
+        {
+            WcClearSnapTimer();
+            g_state.snap_pointer_x = pointerX;
+            g_state.snap_pointer_y = pointerY;
+            g_snapTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:g_delegate
+                                                                selector:@selector(snapTimerFired:)
+                                                                userInfo:nil repeats:NO];
+        }
+    }
+    else
+    {
+        WcClearSnapTimer();
+        g_state.snap_pointer_x = pointerX;
+        g_state.snap_pointer_y = pointerY;
+    }
+    if (g_state.snap_choice_locked &&
+        hypot(pointerX - g_state.snap_choice.screen_x, pointerY - g_state.snap_choice.screen_y) > radiusPx * 2.0)
+        g_state.snap_choice_locked = 0;
+}
+
+static NSPoint WcSketchAppKitPoint(double sx, double sy, double height)
+{
+    return NSMakePoint(sx, height - sy);
+}
+
+
 @implementation WcGraphicsView
+
+- (void)drawSketchGridWithWidth:(int)width height:(double)height
+{
+    double scale = WcSketchPixelsPerMm();
+    double gridMm = 10.0;
+    while (gridMm * scale < 24.0) gridMm *= 2.0;
+    while (gridMm * scale > 96.0) gridMm *= 0.5;
+    double step = gridMm * scale;
+    double originX = width * 0.5 + g_state.pan_x;
+    double originY = height * 0.5 + g_state.pan_y;
+
+    NSBezierPath *grid = [NSBezierPath bezierPath];
+    grid.lineWidth = 1.0;
+    for (double x = fmod(originX, step); x < width; x += step)
+    {
+        if (x < 0.0) continue;
+        [grid moveToPoint:NSMakePoint(x + 0.5, 0.0)];
+        [grid lineToPoint:NSMakePoint(x + 0.5, height)];
+    }
+    for (double y = fmod(originY, step); y < height; y += step)
+    {
+        if (y < 0.0) continue;
+        double ay = height - (y + 0.5);
+        [grid moveToPoint:NSMakePoint(0.0, ay)];
+        [grid lineToPoint:NSMakePoint(width, ay)];
+    }
+    [WcRGBA(0.24, 0.19, 0.34, 0.38) setStroke];
+    [grid stroke];
+
+    NSBezierPath *xAxis = [NSBezierPath bezierPath];
+    xAxis.lineWidth = 1.6;
+    double appOriginY = height - originY;
+    [xAxis moveToPoint:NSMakePoint(0.0, appOriginY)];
+    [xAxis lineToPoint:NSMakePoint(width, appOriginY)];
+    [WcRGBA(0.94, 0.28, 0.66, 0.78) setStroke];
+    [xAxis stroke];
+
+    NSBezierPath *yAxis = [NSBezierPath bezierPath];
+    yAxis.lineWidth = 1.6;
+    [yAxis moveToPoint:NSMakePoint(originX, 0.0)];
+    [yAxis lineToPoint:NSMakePoint(originX, height)];
+    [WcRGBA(0.44, 0.68, 1.0, 0.78) setStroke];
+    [yAxis stroke];
+
+    NSBezierPath *origin = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(originX - 5.0, appOriginY - 5.0, 10.0, 10.0)];
+    [WcRGBA(0.98, 0.82, 0.95, 0.98) setFill];
+    [origin fill];
+    WcDrawText("X", width - 18.0, originY - 5.0, height, WcRGBA(0.94, 0.28, 0.66, 0.95), [NSFont boldSystemFontOfSize:10]);
+    WcDrawText("Y", originX + 6.0, 14.0, height, WcRGBA(0.44, 0.68, 1.0, 0.95), [NSFont boldSystemFontOfSize:10]);
+    WcDrawText("0,0", originX + 7.0, originY - 7.0, height, WcRGBA(0.86, 0.78, 0.90, 0.92), [NSFont boldSystemFontOfSize:10]);
+}
+
+- (void)appendSketchLineToPath:(NSBezierPath *)path width:(int)width height:(double)height
+                           x1:(double)x1 y1:(double)y1 x2:(double)x2 y2:(double)y2
+{
+    double sx1, sy1, sx2, sy2;
+    WcSketchToScreen(width, (int)height, x1, y1, &sx1, &sy1);
+    WcSketchToScreen(width, (int)height, x2, y2, &sx2, &sy2);
+    [path moveToPoint:WcSketchAppKitPoint(sx1, sy1, height)];
+    [path lineToPoint:WcSketchAppKitPoint(sx2, sy2, height)];
+}
+
+- (void)drawSketchGeometryWithWidth:(int)width height:(double)height
+{
+    if (g_callbacks.sketch_geometry_rows == NULL)
+        return;
+    WcCocoaSketchGeometryRow rows[WC_COCOA_FEATURE_ROW_CAPACITY];
+    size_t count = g_callbacks.sketch_geometry_rows(g_userData, g_state.active_sketch_id,
+                                                     rows, WC_COCOA_FEATURE_ROW_CAPACITY);
+    if (count > WC_COCOA_FEATURE_ROW_CAPACITY)
+        count = WC_COCOA_FEATURE_ROW_CAPACITY;
+    [WcRGBA(0.98, 0.78, 0.94, 1.0) setStroke];
+    for (size_t i = 0; i < count; ++i)
+    {
+        WcCocoaSketchGeometryRow *row = &rows[i];
+        NSBezierPath *path = [NSBezierPath bezierPath];
+        path.lineWidth = 2.0;
+        if (row->kind == WC_COCOA_FEATURE_KIND_SKETCH_LINE)
+            [self appendSketchLineToPath:path width:width height:height x1:row->values[0] y1:row->values[1] x2:row->values[2] y2:row->values[3]];
+        else if (row->kind == WC_COCOA_FEATURE_KIND_SKETCH_CIRCLE)
+        {
+            double sx, sy;
+            WcSketchToScreen(width, (int)height, row->values[0], row->values[1], &sx, &sy);
+            double radius = fabs(row->values[2]) * WcSketchPixelsPerMm();
+            NSPoint centre = WcSketchAppKitPoint(sx, sy, height);
+            path = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(centre.x - radius, centre.y - radius, radius * 2.0, radius * 2.0)];
+            path.lineWidth = 2.0;
+        }
+        else if (row->kind == WC_COCOA_FEATURE_KIND_SKETCH_RECTANGLE)
+        {
+            double x = row->values[0], y = row->values[1], w = row->values[2], h = row->values[3];
+            [self appendSketchLineToPath:path width:width height:height x1:x y1:y x2:x+w y2:y];
+            [self appendSketchLineToPath:path width:width height:height x1:x+w y1:y x2:x+w y2:y+h];
+            [self appendSketchLineToPath:path width:width height:height x1:x+w y1:y+h x2:x y2:y+h];
+            [self appendSketchLineToPath:path width:width height:height x1:x y1:y+h x2:x y2:y];
+        }
+        else if (row->kind == WC_COCOA_FEATURE_KIND_SKETCH_ARC)
+        {
+            double start = row->values[3] * M_PI / 180.0;
+            double end = row->values[4] * M_PI / 180.0;
+            if (end < start) end += 2.0 * M_PI;
+            for (int segment = 0; segment <= 48; ++segment)
+            {
+                double t = start + (end - start) * ((double)segment / 48.0);
+                double x = row->values[0] + cos(t) * row->values[2];
+                double y = row->values[1] + sin(t) * row->values[2];
+                double sx, sy;
+                WcSketchToScreen(width, (int)height, x, y, &sx, &sy);
+                NSPoint point = WcSketchAppKitPoint(sx, sy, height);
+                if (segment == 0) [path moveToPoint:point]; else [path lineToPoint:point];
+            }
+        }
+        [path stroke];
+    }
+}
+
+- (void)drawSketchPreviewWithWidth:(int)width height:(double)height
+{
+    if (!g_state.sketch_has_anchor || !g_state.sketch_cursor_valid)
+        return;
+    NSBezierPath *path = [NSBezierPath bezierPath];
+    path.lineWidth = 1.5;
+    CGFloat dashes[2] = {5.0, 4.0};
+    [path setLineDash:dashes count:2 phase:0.0];
+    if (g_state.sketch_tool == WC_COCOA_SKETCH_TOOL_LINE)
+        [self appendSketchLineToPath:path width:width height:height
+                                 x1:g_state.sketch_anchor_x y1:g_state.sketch_anchor_y
+                                 x2:g_state.sketch_cursor_x y2:g_state.sketch_cursor_y];
+    else if (g_state.sketch_tool == WC_COCOA_SKETCH_TOOL_CIRCLE)
+    {
+        double cx, cy;
+        WcSketchToScreen(width, (int)height, g_state.sketch_anchor_x, g_state.sketch_anchor_y, &cx, &cy);
+        double radius = hypot(g_state.sketch_cursor_x - g_state.sketch_anchor_x,
+                              g_state.sketch_cursor_y - g_state.sketch_anchor_y) * WcSketchPixelsPerMm();
+        NSPoint centre = WcSketchAppKitPoint(cx, cy, height);
+        path = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(centre.x-radius, centre.y-radius, radius*2.0, radius*2.0)];
+        path.lineWidth = 1.5;
+        [path setLineDash:dashes count:2 phase:0.0];
+    }
+    else if (g_state.sketch_tool == WC_COCOA_SKETCH_TOOL_RECTANGLE)
+    {
+        double x1 = g_state.sketch_anchor_x, y1 = g_state.sketch_anchor_y;
+        double x2 = g_state.sketch_cursor_x, y2 = g_state.sketch_cursor_y;
+        [self appendSketchLineToPath:path width:width height:height x1:x1 y1:y1 x2:x2 y2:y1];
+        [self appendSketchLineToPath:path width:width height:height x1:x2 y1:y1 x2:x2 y2:y2];
+        [self appendSketchLineToPath:path width:width height:height x1:x2 y1:y2 x2:x1 y2:y2];
+        [self appendSketchLineToPath:path width:width height:height x1:x1 y1:y2 x2:x1 y2:y1];
+    }
+    [WcRGBA(0.46, 0.86, 1.0, 0.95) setStroke];
+    [path stroke];
+}
+
+- (void)drawSnapFeedbackWithHeight:(double)height
+{
+    if (g_state.snap_candidate_count == 0)
+        return;
+    WcCocoaSnapCandidate *candidate = g_state.snap_choice_locked ? &g_state.snap_choice : &g_state.snap_candidates[0];
+    NSBezierPath *path = [NSBezierPath bezierPath];
+    path.lineWidth = 2.0;
+    NSPoint point = WcSketchAppKitPoint(candidate->screen_x, candidate->screen_y, height);
+    if (candidate->kind == WC_COCOA_SNAP_X_AXIS)
+    {
+        [path moveToPoint:NSMakePoint(0.0, point.y)];
+        [path lineToPoint:NSMakePoint(self.bounds.size.width, point.y)];
+    }
+    else if (candidate->kind == WC_COCOA_SNAP_Y_AXIS)
+    {
+        [path moveToPoint:NSMakePoint(point.x, 0.0)];
+        [path lineToPoint:NSMakePoint(point.x, height)];
+    }
+    [path appendBezierPathWithOvalInRect:NSMakeRect(point.x - 6.0, point.y - 6.0, 12.0, 12.0)];
+    [WcRGBA(0.42, 0.94, 1.0, 0.98) setStroke];
+    [path stroke];
+    NSBezierPath *dot = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(point.x - 2.2, point.y - 2.2, 4.4, 4.4)];
+    [WcRGBA(0.42, 0.94, 1.0, 0.98) setFill];
+    [dot fill];
+    if (g_state.snap_candidate_count > 1 && g_state.snap_ambiguity_ready)
+        WcDrawText("...", candidate->screen_x + 9.0, candidate->screen_y - 7.0, height,
+                   WcRGBA(0.96, 0.76, 0.92, 0.98), [NSFont boldSystemFontOfSize:13]);
+}
+
 
 - (instancetype)initWithFrame:(NSRect)frame
 {
@@ -782,15 +2018,17 @@ static void WcStrokeSegment(NSColor *colour, CGFloat lineWidth, NSPoint a, NSPoi
     WcCocoaModelSnapshot snapshot;
     WcViewTransform transform;
     double originX = width * 0.5 + g_state.pan_x;
-    double originY = height * 0.5 + g_state.pan_y;
+    double originY = height * 0.5 - g_state.pan_y;
     WcGetSnapshot(&snapshot);
-    transform = WcMakeViewTransform(width, viewHeight, &snapshot);
+    transform = (snapshot.bounds_valid || g_state.fit_bounds_valid)
+        ? WcMakeViewTransform(width, viewHeight, &snapshot)
+        : WcMakeEmptyCsysTransform(width, viewHeight);
     if (transform.valid)
     {
         double sx, sy;
         WcModelToScreen(&transform, 0.0, 0.0, 0.0, &sx, &sy);
         originX = sx;
-        originY = height - sy; /* GTK y-down -> AppKit y-up */
+        originY = height - sy; /* GTK y-down -> AppKit y-up. */
     }
     const int step = 32;
     NSColor *gridColour = WcRGBA(0.24, 0.19, 0.34, 0.30);
@@ -970,6 +2208,36 @@ static void WcStrokeSegment(NSColor *colour, CGFloat lineWidth, NSPoint a, NSPoi
     }
 }
 
+- (void)drawPlanarBodyFacesWithTransform:(const WcViewTransform *)transform height:(double)height
+{
+    WcCocoaPlanarFaceRow faces[WC_COCOA_FACE_ROW_CAPACITY];
+    if (g_callbacks.planar_face_rows == NULL || !transform->valid)
+        return;
+    size_t count = g_callbacks.planar_face_rows(g_userData, faces, WC_COCOA_FACE_ROW_CAPACITY);
+    if (count > WC_COCOA_FACE_ROW_CAPACITY)
+        count = WC_COCOA_FACE_ROW_CAPACITY;
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (faces[i].point_count < 3 || faces[i].point_count > WC_COCOA_FACE_MAX_POINTS)
+            continue;
+        double polygon[WC_COCOA_FACE_MAX_POINTS * 2];
+        for (uint32_t p = 0; p < faces[i].point_count; ++p)
+        {
+            double sx, sy;
+            WcModelToScreen(transform, faces[i].points[p * 3], faces[i].points[p * 3 + 1],
+                            faces[i].points[p * 3 + 2], &sx, &sy);
+            polygon[p * 2] = sx;
+            polygon[p * 2 + 1] = height - sy;
+        }
+        /* This is real exact planar B-rep face geometry, not the old feature
+           bounding box.  Keep the fill light so overlapping face outlines
+           remain legible until the dedicated depth-buffered Metal renderer lands. */
+        [self strokePolygon:polygon count:(int)faces[i].point_count
+                       fill:WcRGBA(0.72, 0.50, 0.88, 0.10)
+                     stroke:WcRGBA(0.96, 0.72, 0.92, 0.72) width:1.25];
+    }
+}
+
 - (void)drawPlanarFaceSelectionWithTransform:(const WcViewTransform *)transform height:(double)height
 {
     WcCocoaPlanarFaceRow faces[WC_COCOA_FACE_ROW_CAPACITY];
@@ -983,7 +2251,9 @@ static void WcStrokeSegment(NSColor *colour, CGFloat lineWidth, NSPoint a, NSPoi
         double polygon[WC_COCOA_FACE_MAX_POINTS * 2];
         int highlight = faces[i].persistent_id == g_state.hover_face_persistent_id ||
                         (g_state.selected_body_feature_id != 0 &&
-                         faces[i].owner_feature_id == g_state.selected_body_feature_id);
+                         faces[i].owner_feature_id == g_state.selected_body_feature_id) ||
+                        (g_state.selected_support_kind == WC_COCOA_SKETCH_SUPPORT_PLANAR_FACE &&
+                         faces[i].persistent_id == g_state.selected_face_persistent_id);
         if (!highlight || faces[i].point_count < 3 || faces[i].point_count > WC_COCOA_FACE_MAX_POINTS)
             continue;
         for (uint32_t p = 0; p < faces[i].point_count; ++p)
@@ -1170,10 +2440,25 @@ static void WcStrokeSegment(NSColor *colour, CGFloat lineWidth, NSPoint a, NSPoi
     WcViewTransform transform;
 
     [self clearMetalBackground];
+    if (g_state.sketch_mode)
+    {
+        [self drawSketchGridWithWidth:width height:height];
+        [self drawSketchGeometryWithWidth:width height:height];
+        [self drawSketchPreviewWithWidth:width height:height];
+        [self drawSnapFeedbackWithHeight:height];
+        char title[256];
+        (void)snprintf(title, sizeof(title), "Sketch — %s", g_state.active_sketch_name);
+        WcDrawText(title, 20.0, 30.0, height, WcRGBA(0.96, 0.76, 0.92, 0.88), [NSFont boldSystemFontOfSize:17]);
+        WcDrawText("Click two points to draw. Wheel: zoom  Middle-drag: pan  Esc: cancel current entity.",
+                   20.0, 48.0, height, WcRGBA(0.75, 0.72, 0.82, 0.84), [NSFont systemFontOfSize:11]);
+        return;
+    }
     [self drawGridWithHeight:height];
     WcGetSnapshot(&snapshot);
     transform = WcMakeViewTransform(width, (int)height, &snapshot);
-    [self drawBodyBoundsWithTransform:&transform height:height];
+    if (g_showDiagnosticBodyBounds)
+        [self drawBodyBoundsWithTransform:&transform height:height];
+    [self drawPlanarBodyFacesWithTransform:&transform height:height];
     [self drawAllSketches3DWithTransform:&transform height:height];
     [self drawPlanarFaceSelectionWithTransform:&transform height:height];
     [self drawSelectedBodyBoundsWithTransform:&transform height:height];
@@ -1201,9 +2486,11 @@ static void WcStrokeSegment(NSColor *colour, CGFloat lineWidth, NSPoint a, NSPoi
     double width = self.bounds.size.width;
     double height = self.bounds.size.height;
     NSPoint local = [self convertPoint:event.locationInWindow fromView:nil];
-    double px = g_state.pointer_valid ? g_state.pointer_x : width * 0.5;
-    double py = g_state.pointer_valid ? g_state.pointer_y : height * 0.5;
-    (void)local;
+    double px = local.x;
+    double py = height - local.y;
+    g_state.pointer_x = px;
+    g_state.pointer_y = py;
+    g_state.pointer_valid = 1;
     /* Keep the model point under the cursor fixed while zooming. */
     g_state.pan_x = px - width * 0.5 - factor * (px - width * 0.5 - g_state.pan_x);
     g_state.pan_y = py - height * 0.5 - factor * (py - height * 0.5 - g_state.pan_y);
@@ -1215,30 +2502,132 @@ static void WcStrokeSegment(NSColor *colour, CGFloat lineWidth, NSPoint a, NSPoi
     double height = self.bounds.size.height;
     NSPoint local = [self convertPoint:event.locationInWindow fromView:nil];
     double gx = local.x;
-    double gy = height - local.y; /* GTK y-down convention */
+    double gy = height - local.y; /* shared GTK y-down convention */
     g_state.pointer_x = gx;
     g_state.pointer_y = gy;
     g_state.pointer_valid = 1;
     [self.window makeFirstResponder:self];
-
     if (event.buttonNumber != 0)
         return;
 
     int width = (int)self.bounds.size.width;
+    int iheight = (int)height;
+    if (g_state.sketch_mode)
+    {
+        WcUpdateSnapCandidates(width, iheight, gx, gy);
+        if (g_state.snap_candidate_count > 1 && g_state.snap_ambiguity_ready && !g_state.snap_choice_locked)
+        {
+            [g_delegate showSnapChoiceMenuForView:self];
+            return;
+        }
+        double sx, sy;
+        WcScreenToSketch(width, iheight, gx, gy, &sx, &sy);
+        if (g_state.snap_choice_locked)
+        {
+            WcCocoaSnapCandidate candidate = g_state.snap_choice;
+            [g_delegate commitSketchX:candidate.x y:candidate.y
+                           snapFeature:candidate.feature_id snapPoint:candidate.point_index];
+        }
+        else if (g_state.snap_candidate_count > 0)
+        {
+            WcCocoaSnapCandidate candidate = g_state.snap_candidates[0];
+            [g_delegate commitSketchX:candidate.x y:candidate.y
+                           snapFeature:candidate.feature_id snapPoint:candidate.point_index];
+        }
+        else
+            [g_delegate commitSketchX:sx y:sy snapFeature:0 snapPoint:0];
+        return;
+    }
+
+    if (g_state.feature_pick_active && g_delegate.featureDialogDescriptor != NULL &&
+        g_state.feature_pick_field_index < g_delegate.featureDialogDescriptor->field_count)
+    {
+        const WcFeatureDialogueFieldDescriptorV1 *field =
+            &g_delegate.featureDialogDescriptor->fields[g_state.feature_pick_field_index];
+        uint32_t picked = 0;
+        if (field->selection_kind == WC_FEATURE_DIALOGUE_SELECTION_PROFILE)
+            picked = WcHitTestSketch(width, iheight, gx, gy);
+        else if (field->selection_kind == WC_FEATURE_DIALOGUE_SELECTION_BODY)
+            picked = WcHitTestBody(width, iheight, gx, gy);
+        else if (field->selection_kind == WC_FEATURE_DIALOGUE_SELECTION_ANY_FEATURE)
+        {
+            picked = WcHitTestBody(width, iheight, gx, gy);
+            if (picked == 0)
+                picked = WcHitTestSketch(width, iheight, gx, gy);
+        }
+        char pickedName[WC_COCOA_UI_ID_CAPACITY];
+        if (picked != 0 && WcFeatureNameForId(picked, pickedName, sizeof(pickedName)))
+        {
+            if ([g_delegate acceptFeaturePick:picked name:pickedName])
+            {
+                g_state.selected_feature_id = picked;
+                g_state.selected_row_is_feature = 1;
+                WcCopyText(g_state.selected_feature_name, sizeof(g_state.selected_feature_name), pickedName);
+                [g_delegate syncNavigatorSelectionToState];
+                [g_delegate reloadNavigatorKeepingSelection];
+            }
+        }
+        else
+            [g_delegate setCommandStatus:field->selection_kind == WC_FEATURE_DIALOGUE_SELECTION_PATH
+                ? @"Path picking is available from Model Navigator; select a path feature there"
+                : @"No acceptable feature under the pointer — try the visible sketch/profile or Model Navigator"];
+        [self setNeedsDisplay:YES];
+        return;
+    }
+
     uint32_t ownerId = 0;
     uint64_t faceId = 0;
-    uint32_t bodyId = WcHitTestBody(width, (int)height, gx, gy);
+    if (g_state.sketch_support_mode)
+        faceId = WcHitTestPlanarFace(width, iheight, gx, gy, &ownerId);
+    if (g_state.sketch_support_mode && faceId != 0)
+    {
+        g_state.selected_support_kind = WC_COCOA_SKETCH_SUPPORT_PLANAR_FACE;
+        g_state.selected_support_feature_id = ownerId;
+        g_state.selected_face_persistent_id = faceId;
+        g_state.selected_csys_plane[0] = '\0';
+        g_state.selected_feature_id = ownerId;
+        g_state.selected_row_is_feature = 0;
+        [g_delegate beginNewSketch];
+        [self setNeedsDisplay:YES];
+        return;
+    }
+    if (g_state.sketch_support_mode)
+    {
+        uint32_t csysId = 0;
+        char csysPlane[4] = {0};
+        if (WcHitTestCsysPlane(width, iheight, gx, gy, &csysId, csysPlane, sizeof(csysPlane)))
+        {
+            g_state.selected_support_kind = WC_COCOA_SKETCH_SUPPORT_CSYS_PLANE;
+            g_state.selected_support_feature_id = csysId;
+            g_state.selected_face_persistent_id = 0;
+            WcCopyText(g_state.selected_csys_plane, sizeof(g_state.selected_csys_plane), csysPlane);
+            g_state.selected_feature_id = csysId;
+            g_state.selected_row_is_feature = 0;
+            [g_delegate beginNewSketch];
+            [self setNeedsDisplay:YES];
+            return;
+        }
+        [g_delegate setCommandStatus:@"Sketch support required — select a planar face here or a datum/CSYS plane in Model Navigator"];
+        return;
+    }
+
+    uint32_t bodyId = WcHitTestBody(width, iheight, gx, gy);
     if (bodyId == 0)
     {
-        faceId = WcHitTestPlanarFace(width, (int)height, gx, gy, &ownerId);
+        faceId = WcHitTestPlanarFace(width, iheight, gx, gy, &ownerId);
         if (faceId != 0)
             bodyId = ownerId;
     }
     if (bodyId != 0)
     {
         char name[WC_COCOA_UI_ID_CAPACITY];
+        g_state.selected_support_kind = WC_COCOA_SKETCH_SUPPORT_NONE;
+        g_state.selected_support_feature_id = 0;
+        g_state.selected_face_persistent_id = 0;
+        g_state.selected_csys_plane[0] = '\0';
         g_state.selected_feature_id = bodyId;
         g_state.selected_body_feature_id = bodyId;
+        g_state.selected_row_is_feature = 1;
         if (WcFeatureNameForId(bodyId, name, sizeof(name)))
             WcCopyText(g_state.selected_feature_name, sizeof(g_state.selected_feature_name), name);
         [g_delegate syncNavigatorSelectionToState];
@@ -1262,6 +2651,8 @@ static void WcStrokeSegment(NSColor *colour, CGFloat lineWidth, NSPoint a, NSPoi
     g_state.orbit_dragging = 1;
     g_state.drag_yaw = g_state.yaw;
     g_state.drag_pitch = g_state.pitch;
+    g_state.drag_pan_x = g_state.pan_x;
+    g_state.drag_pan_y = g_state.pan_y;
     g_state.orbit_start_x = local.x;
     g_state.orbit_start_y = height - local.y;
     [self.window makeFirstResponder:self];
@@ -1275,8 +2666,16 @@ static void WcStrokeSegment(NSColor *colour, CGFloat lineWidth, NSPoint a, NSPoi
     NSPoint local = [self convertPoint:event.locationInWindow fromView:nil];
     double offsetX = local.x - g_state.orbit_start_x;
     double offsetY = (height - local.y) - g_state.orbit_start_y;
-    g_state.yaw = g_state.drag_yaw + offsetX * 0.008;
-    g_state.pitch = WcClamp(g_state.drag_pitch + offsetY * 0.008, -1.48, 1.48);
+    if (g_state.sketch_mode)
+    {
+        g_state.pan_x = g_state.drag_pan_x + offsetX;
+        g_state.pan_y = g_state.drag_pan_y + offsetY;
+    }
+    else
+    {
+        g_state.yaw = g_state.drag_yaw + offsetX * 0.008;
+        g_state.pitch = WcClamp(g_state.drag_pitch + offsetY * 0.008, -1.48, 1.48);
+    }
     [self setNeedsDisplay:YES];
 }
 
@@ -1296,8 +2695,16 @@ static void WcStrokeSegment(NSColor *colour, CGFloat lineWidth, NSPoint a, NSPoi
     double gy = height - local.y;
     double offsetX = gx - g_state.orbit_start_x;
     double offsetY = gy - g_state.orbit_start_y;
-    g_state.yaw = g_state.drag_yaw + offsetX * 0.008;
-    g_state.pitch = WcClamp(g_state.drag_pitch + offsetY * 0.008, -1.48, 1.48);
+    if (g_state.sketch_mode)
+    {
+        g_state.pan_x = g_state.drag_pan_x + offsetX;
+        g_state.pan_y = g_state.drag_pan_y + offsetY;
+    }
+    else
+    {
+        g_state.yaw = g_state.drag_yaw + offsetX * 0.008;
+        g_state.pitch = WcClamp(g_state.drag_pitch + offsetY * 0.008, -1.48, 1.48);
+    }
     [self setNeedsDisplay:YES];
 }
 
@@ -1316,6 +2723,25 @@ static void WcStrokeSegment(NSColor *colour, CGFloat lineWidth, NSPoint a, NSPoi
     g_state.pointer_x = gx;
     g_state.pointer_y = gy;
     g_state.pointer_valid = 1;
+    if (g_state.sketch_mode)
+    {
+        int width = (int)self.bounds.size.width;
+        WcUpdateSnapCandidates(width, (int)height, gx, gy);
+        WcScreenToSketch(width, (int)height, gx, gy, &g_state.sketch_cursor_x, &g_state.sketch_cursor_y);
+        if (g_state.snap_choice_locked)
+        {
+            g_state.sketch_cursor_x = g_state.snap_choice.x;
+            g_state.sketch_cursor_y = g_state.snap_choice.y;
+        }
+        else if (g_state.snap_candidate_count > 0)
+        {
+            g_state.sketch_cursor_x = g_state.snap_candidates[0].x;
+            g_state.sketch_cursor_y = g_state.snap_candidates[0].y;
+        }
+        g_state.sketch_cursor_valid = 1;
+        [self setNeedsDisplay:YES];
+        return;
+    }
     uint32_t owner = 0;
     uint64_t face = WcHitTestPlanarFace((int)self.bounds.size.width, (int)height, gx, gy, &owner);
     if (face != g_state.hover_face_persistent_id || owner != g_state.hover_face_owner_id)
@@ -1328,6 +2754,8 @@ static void WcStrokeSegment(NSColor *colour, CGFloat lineWidth, NSPoint a, NSPoi
 
 - (void)rightMouseDown:(NSEvent *)event
 {
+    if (g_state.sketch_mode)
+        return;
     double height = self.bounds.size.height;
     NSPoint local = [self convertPoint:event.locationInWindow fromView:nil];
     double gx = local.x;
@@ -1362,8 +2790,21 @@ static void WcStrokeSegment(NSColor *colour, CGFloat lineWidth, NSPoint a, NSPoi
     double step = (event.modifierFlags & NSEventModifierFlagShift) != 0 ? 42.0 : 18.0;
     if (event.keyCode == 53) /* Esc */
     {
+        if (g_state.feature_pick_active)
+        {
+            g_state.feature_pick_active = 0;
+            g_state.feature_pick_field_index = 0;
+            [g_delegate setCommandStatus:@"Feature selection cancelled"];
+            [g_delegate.featureDialogPanel makeKeyAndOrderFront:nil];
+            return;
+        }
+        if (g_state.sketch_mode && g_state.sketch_has_anchor)
+        {
+            g_state.sketch_has_anchor = 0;
+            [g_delegate setCommandStatus:@"Current sketch entity cancelled"];
+            [self setNeedsDisplay:YES];
+        }
         [self.window makeFirstResponder:self];
-        [g_delegate setCommandStatus:@"Viewport focus — wheel zoom, middle-drag orbit, WASD pan, Enter for command line"];
         return;
     }
     if (event.keyCode == 36 || event.keyCode == 76) /* Return / keypad Enter */
@@ -1430,6 +2871,143 @@ static int WcFitFeature(uint32_t featureId)
     return 1;
 }
 
+static BOOL WcFeatureDialogueSymbolValid(NSString *text)
+{
+    if (text == nil || text.length == 0)
+        return NO;
+    NSCharacterSet *allowed = [NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-." ];
+    return [text rangeOfCharacterFromSet:[allowed invertedSet]].location == NSNotFound;
+}
+
+static void WcFeatureDialogueAppendQuoted(NSMutableString *command, NSString *text)
+{
+    [command appendString:@"\""];
+    NSString *source = text != nil ? text : @"";
+    for (NSUInteger i = 0; i < source.length; ++i)
+    {
+        unichar ch = [source characterAtIndex:i];
+        if (ch == '\\' || ch == '"')
+            [command appendString:@"\\"];
+        if (ch == '\n')
+            [command appendString:@"\\n"];
+        else if (ch != '\r')
+            [command appendFormat:@"%C", ch];
+    }
+    [command appendString:@"\""];
+}
+
+static NSString *WcFeatureDialogueSelectionName(uint32_t kind)
+{
+    switch (kind)
+    {
+        case WC_FEATURE_DIALOGUE_SELECTION_PROFILE: return @"profile";
+        case WC_FEATURE_DIALOGUE_SELECTION_BODY: return @"body";
+        case WC_FEATURE_DIALOGUE_SELECTION_PATH: return @"path";
+        case WC_FEATURE_DIALOGUE_SELECTION_ANY_FEATURE: return @"feature";
+        default: return @"feature";
+    }
+}
+
+static NSString *WcFeatureDialogueEditorText(NSControl *editor, uint32_t kind)
+{
+    if (editor == nil)
+        return @"";
+    if (kind == WC_FEATURE_DIALOGUE_FIELD_BOOLEAN && [editor isKindOfClass:[NSButton class]])
+        return ((NSButton *)editor).state == NSControlStateValueOn ? @"1" : @"0";
+    if (kind == WC_FEATURE_DIALOGUE_FIELD_CHOICE && [editor isKindOfClass:[NSPopUpButton class]])
+        return ((NSPopUpButton *)editor).titleOfSelectedItem ?: @"";
+    if ([editor isKindOfClass:[NSTextField class]])
+        return ((NSTextField *)editor).stringValue ?: @"";
+    return @"";
+}
+
+static BOOL WcFeatureDialogueAppendValue(NSMutableString *command,
+                                         const WcFeatureDialogueFieldDescriptorV1 *field,
+                                         NSString *value)
+{
+    if (command == nil || field == NULL)
+        return NO;
+    if ((field->flags & WC_FEATURE_DIALOGUE_FIELD_REQUIRED) != 0u && (value == nil || value.length == 0))
+        return NO;
+    switch (field->kind)
+    {
+        case WC_FEATURE_DIALOGUE_FIELD_NAME:
+        case WC_FEATURE_DIALOGUE_FIELD_FEATURE:
+        case WC_FEATURE_DIALOGUE_FIELD_CHOICE:
+            if (!WcFeatureDialogueSymbolValid(value))
+                return NO;
+            [command appendString:@":"];
+            [command appendString:value];
+            return YES;
+        case WC_FEATURE_DIALOGUE_FIELD_TEXT:
+        case WC_FEATURE_DIALOGUE_FIELD_FILE:
+            WcFeatureDialogueAppendQuoted(command, value);
+            return YES;
+        case WC_FEATURE_DIALOGUE_FIELD_BOOLEAN:
+            [command appendString:[value isEqualToString:@"1"] ? @"1" : @"0"];
+            return YES;
+        case WC_FEATURE_DIALOGUE_FIELD_VALUE:
+        case WC_FEATURE_DIALOGUE_FIELD_RAW:
+            if (value == nil || value.length == 0)
+                return NO;
+            [command appendString:value];
+            return YES;
+        default:
+            return NO;
+    }
+}
+
+static BOOL WcFeatureDialogueNameExists(const char *name)
+{
+    if (name == NULL || g_callbacks.feature_rows == NULL)
+        return NO;
+    size_t count = g_callbacks.feature_rows(g_userData, NULL, 0);
+    if (count == 0)
+        return NO;
+    WcCocoaFeatureRow *rows = calloc(count, sizeof(*rows));
+    if (rows == NULL)
+        return NO;
+    g_callbacks.feature_rows(g_userData, rows, count);
+    BOOL exists = NO;
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (rows[i].name != NULL && strcmp(rows[i].name, name) == 0)
+        {
+            exists = YES;
+            break;
+        }
+    }
+    free(rows);
+    return exists;
+}
+
+static NSString *WcFeatureDialogueUniqueName(const char *base)
+{
+    const char *stem = base != NULL && base[0] != '\0' ? base : "feature";
+    if (!WcFeatureDialogueNameExists(stem))
+        return WcString(stem);
+    for (unsigned int suffix = 2; suffix < 100000u; ++suffix)
+    {
+        char candidate[WC_COCOA_UI_ID_CAPACITY];
+        (void)snprintf(candidate, sizeof(candidate), "%s_%u", stem, suffix);
+        if (!WcFeatureDialogueNameExists(candidate))
+            return WcString(candidate);
+    }
+    return WcString(stem);
+}
+
+static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
+{
+    if (support == NULL || g_state.selected_support_kind == WC_COCOA_SKETCH_SUPPORT_NONE)
+        return 0;
+    memset(support, 0, sizeof(*support));
+    support->kind = g_state.selected_support_kind;
+    support->feature_id = g_state.selected_support_feature_id;
+    support->face_persistent_id = g_state.selected_face_persistent_id;
+    support->csys_plane = g_state.selected_csys_plane[0] != '\0' ? g_state.selected_csys_plane : NULL;
+    return 1;
+}
+
 @implementation WcAppDelegate
 
 /* -- status plumbing ------------------------------------------------ */
@@ -1476,6 +3054,630 @@ static int WcFitFeature(uint32_t featureId)
     [self.graphicsView setNeedsDisplay:YES];
 }
 
+/* -- toolkit-neutral feature dialogues ---------------------------------- */
+
+- (void)closeFeatureDialogue
+{
+    g_state.feature_pick_active = 0;
+    g_state.feature_pick_field_index = 0;
+    if (self.featureDialogPanel != nil)
+        [self.featureDialogPanel orderOut:nil];
+    self.featureDialogPanel = nil;
+    self.featureDialogEditors = nil;
+    self.featureDialogDescriptor = NULL;
+    self.featureDialogFeatureId = 0;
+}
+
+- (void)featureDialogueCancel:(id)sender
+{
+    (void)sender;
+    [self closeFeatureDialogue];
+    [self.window makeFirstResponder:self.graphicsView];
+}
+
+- (void)showFeatureDialogue:(const WcFeatureDialogueDescriptorV1 *)descriptor featureId:(uint32_t)featureId
+{
+    if (descriptor == NULL || descriptor->abi_version != WC_FEATURE_DIALOGUE_ABI_V1)
+        return;
+    [self closeFeatureDialogue];
+    self.featureDialogDescriptor = descriptor;
+    self.featureDialogFeatureId = featureId;
+    self.featureDialogEditors = [NSMutableArray arrayWithCapacity:descriptor->field_count];
+
+    const CGFloat width = 540.0;
+    const CGFloat height = 620.0;
+    NSPanel *panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, width, height)
+                                                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
+                                                  backing:NSBackingStoreBuffered defer:NO];
+    panel.title = descriptor->title != NULL ? WcString(descriptor->title) : @"Feature";
+    panel.releasedWhenClosed = NO;
+    panel.backgroundColor = WcWindowBackground();
+    self.featureDialogPanel = panel;
+
+    WcPanelView *content = [[WcPanelView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
+    content.fillColour = WcWindowBackground();
+    content.flippedLayout = YES;
+    content.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+    NSTextField *title = [NSTextField labelWithString:panel.title];
+    title.font = [NSFont boldSystemFontOfSize:18];
+    title.textColor = WcTitlePink();
+    title.frame = NSMakeRect(14, 14, width - 165, 24);
+    title.autoresizingMask = NSViewWidthSizable | NSViewMaxYMargin;
+    [content addSubview:title];
+
+    NSTextField *subtitle = [NSTextField labelWithString:featureId != 0 ? @"Edit feature" : @"Create from ribbon"];
+    subtitle.font = [NSFont systemFontOfSize:11];
+    subtitle.textColor = WcSubtle();
+    subtitle.frame = NSMakeRect(14, 42, width - 165, 16);
+    subtitle.autoresizingMask = NSViewWidthSizable | NSViewMaxYMargin;
+    [content addSubview:subtitle];
+
+    if (descriptor->waifu_image != NULL)
+    {
+        NSString *waifuPath = WcResolveProjectPath(WcString(descriptor->waifu_image));
+        if (waifuPath != nil)
+        {
+            NSImage *waifu = [[NSImage alloc] initWithContentsOfFile:waifuPath];
+            if (waifu != nil)
+            {
+                NSImageView *picture = [[NSImageView alloc] initWithFrame:NSMakeRect(width - 136, 10, 120, 120)];
+                picture.image = waifu;
+                picture.imageScaling = NSImageScaleProportionallyDown;
+                picture.autoresizingMask = NSViewMinXMargin | NSViewMaxYMargin;
+                [content addSubview:picture];
+            }
+        }
+    }
+
+    const CGFloat actionHeight = 52.0;
+    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(12, 140, width - 24, height - 140 - actionHeight)];
+    scroll.hasVerticalScroller = YES;
+    scroll.borderType = NSNoBorder;
+    scroll.backgroundColor = WcWindowBackground();
+    scroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [content addSubview:scroll];
+
+    CGFloat rowHeight = 36.0;
+    CGFloat documentHeight = MAX(scroll.bounds.size.height, descriptor->field_count * rowHeight + 12.0);
+    WcPanelView *fieldsView = [[WcPanelView alloc] initWithFrame:NSMakeRect(0, 0, scroll.bounds.size.width, documentHeight)];
+    fieldsView.fillColour = WcWindowBackground();
+    fieldsView.flippedLayout = YES;
+    fieldsView.autoresizingMask = NSViewWidthSizable;
+
+    for (size_t i = 0; i < descriptor->field_count; ++i)
+    {
+        const WcFeatureDialogueFieldDescriptorV1 *field = &descriptor->fields[i];
+        NSString *initial = field->default_value != NULL ? WcString(field->default_value) : @"";
+        char current[512] = {0};
+        if (featureId != 0 && g_callbacks.feature_dialogue_value != NULL &&
+            g_callbacks.feature_dialogue_value(g_userData, featureId, descriptor, i, current, sizeof(current)) == 0)
+            initial = WcString(current);
+        else if (featureId == 0 && field->kind == WC_FEATURE_DIALOGUE_FIELD_FEATURE && initial.length == 0 &&
+                 g_state.selected_feature_id != 0 && g_state.selected_feature_name[0] != '\0' &&
+                 g_callbacks.feature_dialogue_accept_selection != NULL &&
+                 g_callbacks.feature_dialogue_accept_selection(g_userData, descriptor, i, g_state.selected_feature_id) != 0)
+            initial = WcString(g_state.selected_feature_name);
+        if (featureId == 0 && field->kind == WC_FEATURE_DIALOGUE_FIELD_NAME)
+            initial = WcFeatureDialogueUniqueName([initial UTF8String]);
+
+        CGFloat y = 6.0 + i * rowHeight;
+        NSTextField *label = [NSTextField labelWithString:field->label != NULL ? WcString(field->label) : WcString(field->id)];
+        label.font = [NSFont systemFontOfSize:11];
+        label.textColor = WcTextMain();
+        label.frame = NSMakeRect(4, y + 6, 150, 20);
+        [fieldsView addSubview:label];
+
+        NSControl *editor = nil;
+        CGFloat editorX = 162.0;
+        CGFloat editorWidth = fieldsView.bounds.size.width - editorX - 12.0;
+        BOOL auxiliaryButton = field->kind == WC_FEATURE_DIALOGUE_FIELD_FEATURE || field->kind == WC_FEATURE_DIALOGUE_FIELD_FILE;
+        if (auxiliaryButton)
+            editorWidth -= 88.0;
+
+        if (field->kind == WC_FEATURE_DIALOGUE_FIELD_BOOLEAN)
+        {
+            NSButton *check = [[NSButton alloc] initWithFrame:NSMakeRect(editorX, y + 3, 28, 26)];
+            check.buttonType = NSButtonTypeSwitch;
+            check.title = @"";
+            check.state = ([initial isEqualToString:@"1"] || [initial caseInsensitiveCompare:@"true"] == NSOrderedSame)
+                        ? NSControlStateValueOn : NSControlStateValueOff;
+            editor = check;
+        }
+        else if (field->kind == WC_FEATURE_DIALOGUE_FIELD_CHOICE && field->choices != NULL)
+        {
+            NSPopUpButton *popup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(editorX, y + 2, editorWidth, 28) pullsDown:NO];
+            NSArray<NSString *> *choices = [WcString(field->choices) componentsSeparatedByString:@"|"];
+            [popup addItemsWithTitles:choices];
+            if (initial.length > 0)
+                [popup selectItemWithTitle:initial];
+            editor = popup;
+        }
+        else
+        {
+            NSTextField *entry = [[NSTextField alloc] initWithFrame:NSMakeRect(editorX, y + 3, editorWidth, 25)];
+            entry.stringValue = initial ?: @"";
+            entry.font = [NSFont systemFontOfSize:11];
+            entry.textColor = WcTextMain();
+            entry.backgroundColor = WcHex("#201929", nil);
+            entry.bordered = YES;
+            entry.bezeled = YES;
+            editor = entry;
+        }
+
+        BOOL readOnly = (field->flags & WC_FEATURE_DIALOGUE_FIELD_READ_ONLY) != 0u ||
+                        (featureId != 0 && field->kind == WC_FEATURE_DIALOGUE_FIELD_NAME);
+        if ([editor isKindOfClass:[NSTextField class]])
+            ((NSTextField *)editor).editable = !readOnly;
+        else if (readOnly)
+            editor.enabled = NO;
+        [fieldsView addSubview:editor];
+        [self.featureDialogEditors addObject:editor];
+
+        if (field->kind == WC_FEATURE_DIALOGUE_FIELD_FEATURE &&
+            field->selection_kind != WC_FEATURE_DIALOGUE_SELECTION_NONE && !readOnly)
+        {
+            NSButton *select = [NSButton buttonWithTitle:@"Select…" target:self action:@selector(featureDialogueSelect:)];
+            select.tag = (NSInteger)i;
+            select.frame = NSMakeRect(fieldsView.bounds.size.width - 82, y + 2, 76, 28);
+            [fieldsView addSubview:select];
+        }
+        else if (field->kind == WC_FEATURE_DIALOGUE_FIELD_FILE && !readOnly)
+        {
+            NSButton *browse = [NSButton buttonWithTitle:@"Browse…" target:self action:@selector(featureDialogueBrowse:)];
+            browse.tag = (NSInteger)i;
+            browse.frame = NSMakeRect(fieldsView.bounds.size.width - 82, y + 2, 76, 28);
+            [fieldsView addSubview:browse];
+        }
+    }
+    scroll.documentView = fieldsView;
+
+    CGFloat buttonY = height - 40.0;
+    CGFloat buttonX = width - 14.0;
+    NSButton *cancel = [NSButton buttonWithTitle:@"Cancel" target:self action:@selector(featureDialogueCancel:)];
+    cancel.frame = NSMakeRect(buttonX - 82, buttonY, 76, 28);
+    cancel.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
+    [content addSubview:cancel];
+    buttonX -= 88.0;
+
+    BOOL canApply = (featureId == 0 && descriptor->command_name != NULL) ||
+                    (featureId != 0 && (descriptor->flags & WC_FEATURE_DIALOGUE_EDITABLE) != 0u && descriptor->edit_kind != NULL);
+    if (canApply)
+    {
+        NSButton *apply = [NSButton buttonWithTitle:featureId != 0 ? @"Apply" : @"Create" target:self action:@selector(featureDialogueApply:)];
+        apply.keyEquivalent = @"\r";
+        apply.frame = NSMakeRect(buttonX - 82, buttonY, 76, 28);
+        apply.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
+        [content addSubview:apply];
+        buttonX -= 88.0;
+    }
+    if ((descriptor->flags & WC_FEATURE_DIALOGUE_SKETCH_EDITOR) != 0u && featureId != 0)
+    {
+        NSButton *editSketch = [NSButton buttonWithTitle:@"Edit Sketch Geometry" target:self action:@selector(featureDialogueEditSketch:)];
+        editSketch.frame = NSMakeRect(buttonX - 142, buttonY, 136, 28);
+        editSketch.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
+        [content addSubview:editSketch];
+    }
+
+    panel.contentView = content;
+    [panel center];
+    [panel makeKeyAndOrderFront:nil];
+}
+
+- (void)featureDialogueSelect:(NSButton *)sender
+{
+    if (self.featureDialogDescriptor == NULL || sender.tag < 0 || (size_t)sender.tag >= self.featureDialogDescriptor->field_count)
+        return;
+    const WcFeatureDialogueFieldDescriptorV1 *field = &self.featureDialogDescriptor->fields[(size_t)sender.tag];
+    if (field->kind != WC_FEATURE_DIALOGUE_FIELD_FEATURE || field->selection_kind == WC_FEATURE_DIALOGUE_SELECTION_NONE)
+        return;
+    g_state.feature_pick_active = 1;
+    g_state.feature_pick_field_index = (size_t)sender.tag;
+    /* AppKit does not emit tableViewSelectionDidChange: when the user clicks a
+       row that is already selected.  A profile often remains selected from
+       the operation that opened this dialogue, which made Sketch picking look
+       intermittent.  Clear only the table highlight while arming the picker;
+       the semantic selection state is left intact until the next explicit pick. */
+    self.programmaticSelection = YES;
+    [self.table deselectAll:nil];
+    self.programmaticSelection = NO;
+    [self setCommandStatus:[NSString stringWithFormat:@"Select %@ from the graphics area or Model Navigator; Esc cancels selection",
+                            WcFeatureDialogueSelectionName(field->selection_kind)]];
+    [self.featureDialogPanel orderOut:nil];
+    [self.window makeKeyAndOrderFront:nil];
+    [self.window makeFirstResponder:self.graphicsView];
+}
+
+- (BOOL)acceptFeaturePick:(uint32_t)featureId name:(const char *)featureName
+{
+    if (!g_state.feature_pick_active || self.featureDialogDescriptor == NULL || featureId == 0 || featureName == NULL ||
+        g_state.feature_pick_field_index >= self.featureDialogDescriptor->field_count)
+        return NO;
+    const WcFeatureDialogueFieldDescriptorV1 *field = &self.featureDialogDescriptor->fields[g_state.feature_pick_field_index];
+    if (g_callbacks.feature_dialogue_accept_selection == NULL ||
+        g_callbacks.feature_dialogue_accept_selection(g_userData, self.featureDialogDescriptor,
+            g_state.feature_pick_field_index, featureId) == 0)
+    {
+        [self setCommandStatus:[NSString stringWithFormat:@"%s is not a valid %@ for this field",
+                                featureName, WcFeatureDialogueSelectionName(field->selection_kind)]];
+        return NO;
+    }
+    if (g_state.feature_pick_field_index >= self.featureDialogEditors.count)
+        return NO;
+    NSControl *editor = self.featureDialogEditors[g_state.feature_pick_field_index];
+    if (![editor isKindOfClass:[NSTextField class]])
+        return NO;
+    ((NSTextField *)editor).stringValue = WcString(featureName);
+    [self setCommandStatus:[NSString stringWithFormat:@"%@ selected: %s",
+                            WcFeatureDialogueSelectionName(field->selection_kind), featureName]];
+    g_state.feature_pick_active = 0;
+    g_state.feature_pick_field_index = 0;
+    [self.featureDialogPanel makeKeyAndOrderFront:nil];
+    return YES;
+}
+
+- (void)featureDialogueBrowse:(NSButton *)sender
+{
+    if (self.featureDialogDescriptor == NULL || sender.tag < 0 || (size_t)sender.tag >= self.featureDialogDescriptor->field_count ||
+        (NSUInteger)sender.tag >= self.featureDialogEditors.count)
+        return;
+    NSControl *editor = self.featureDialogEditors[(NSUInteger)sender.tag];
+    if (![editor isKindOfClass:[NSTextField class]])
+        return;
+    NSString *dialogueId = WcString(self.featureDialogDescriptor->id);
+    BOOL save = [dialogueId containsString:@"export"];
+    NSSavePanel *panel = save ? [NSSavePanel savePanel] : [NSOpenPanel openPanel];
+    panel.title = save ? @"Choose Export File" : @"Choose Import File";
+    if (save && ((NSTextField *)editor).stringValue.length > 0)
+        panel.nameFieldStringValue = ((NSTextField *)editor).stringValue.lastPathComponent;
+    if ([panel runModal] == NSModalResponseOK && panel.URL != nil)
+        ((NSTextField *)editor).stringValue = panel.URL.path ?: @"";
+    [self.featureDialogPanel makeKeyAndOrderFront:nil];
+}
+
+- (void)featureDialogueEditSketch:(id)sender
+{
+    (void)sender;
+    uint32_t sketchId = self.featureDialogFeatureId;
+    [self closeFeatureDialogue];
+    [self beginEditSketch:sketchId];
+}
+
+- (void)featureDialogueApply:(id)sender
+{
+    (void)sender;
+    const WcFeatureDialogueDescriptorV1 *descriptor = self.featureDialogDescriptor;
+    if (descriptor == NULL || g_callbacks.submit_command == NULL)
+        return;
+    NSMutableString *command = [NSMutableString string];
+    BOOL haveArgument = NO;
+
+    if (self.featureDialogFeatureId != 0)
+    {
+        if ((descriptor->flags & WC_FEATURE_DIALOGUE_EDITABLE) == 0u || descriptor->edit_kind == NULL)
+            return;
+        NSString *name = nil;
+        for (size_t i = 0; i < descriptor->field_count; ++i)
+            if (descriptor->fields[i].kind == WC_FEATURE_DIALOGUE_FIELD_NAME)
+            {
+                name = WcFeatureDialogueEditorText(self.featureDialogEditors[i], descriptor->fields[i].kind);
+                break;
+            }
+        if (!WcFeatureDialogueSymbolValid(name))
+        {
+            [self setCommandStatus:@"Feature dialogue: invalid feature name"];
+            return;
+        }
+        [command appendFormat:@"feature_edit(:%@, :%s", name, descriptor->edit_kind];
+        haveArgument = YES;
+    }
+    else
+    {
+        if (descriptor->command_name == NULL || descriptor->command_name[0] == '\0')
+            return;
+        [command appendString:WcString(descriptor->command_name)];
+        [command appendString:@"("];
+        if (descriptor->argument_prefix != NULL && descriptor->argument_prefix[0] != '\0')
+        {
+            [command appendString:WcString(descriptor->argument_prefix)];
+            haveArgument = YES;
+        }
+    }
+
+    for (size_t i = 0; i < descriptor->field_count; ++i)
+    {
+        const WcFeatureDialogueFieldDescriptorV1 *field = &descriptor->fields[i];
+        if (self.featureDialogFeatureId != 0 && field->kind == WC_FEATURE_DIALOGUE_FIELD_NAME)
+            continue;
+        NSString *value = WcFeatureDialogueEditorText(self.featureDialogEditors[i], field->kind);
+        if (haveArgument)
+            [command appendString:@", "];
+        if (!WcFeatureDialogueAppendValue(command, field, value))
+        {
+            [self setCommandStatus:[NSString stringWithFormat:@"Feature dialogue: invalid or missing %s",
+                                    field->label != NULL ? field->label : "value"]];
+            return;
+        }
+        haveArgument = YES;
+    }
+    [command appendString:@")"];
+
+    char *line = strdup(command.UTF8String);
+    int status = line != NULL ? [self submitLine:line] : 10;
+    if (line != NULL)
+        free(line);
+    if (status != 0)
+    {
+        [self setCommandStatus:[NSString stringWithFormat:@"%@ rejected (error %d)",
+                                self.featureDialogFeatureId != 0 ? @"Feature edit" : @"Ribbon action", status]];
+        fprintf(stderr, "Feature dialogue failed: %s => error %d\n", command.UTF8String, status);
+        return;
+    }
+    [self setCommandStatus:self.featureDialogFeatureId != 0 ? @"Feature updated" : @"Ribbon action completed"];
+    [self updateStatus];
+    [self.graphicsView setNeedsDisplay:YES];
+    [self closeFeatureDialogue];
+    [self.window makeKeyAndOrderFront:nil];
+}
+
+
+/* -- interactive sketch mode ---------------------------------------- */
+
+- (void)enterSketchMode:(uint32_t)sketchId name:(const char *)sketchName
+{
+    if (sketchId == 0)
+        return;
+    WcClearSnapTimer();
+    g_state.sketch_mode = 1;
+    g_state.sketch_support_mode = 0;
+    g_state.active_sketch_id = sketchId;
+    WcCopyText(g_state.active_sketch_name, sizeof(g_state.active_sketch_name), sketchName != NULL ? sketchName : "sketch");
+    g_state.sketch_tool = WC_COCOA_SKETCH_TOOL_LINE;
+    g_state.sketch_has_anchor = 0;
+    g_state.sketch_cursor_valid = 0;
+    g_state.sketch_anchor_snap_feature = 0;
+    g_state.sketch_anchor_snap_point = 0;
+    g_state.snap_candidate_count = 0;
+    g_state.snap_choice_locked = 0;
+    g_state.snap_ambiguity_ready = 0;
+    g_state.selected_feature_id = sketchId;
+    g_state.selected_feature_kind = WC_COCOA_FEATURE_KIND_SKETCH;
+    g_state.selected_row_is_feature = 1;
+    WcCopyText(g_state.active_ribbon_tab, sizeof(g_state.active_ribbon_tab), "sketch.edit");
+    g_state.yaw = -M_PI / 4.0;
+    g_state.pitch = M_PI / 5.5;
+    g_state.zoom = 1.0;
+    g_state.pan_x = 0.0;
+    g_state.pan_y = 0.0;
+    [self rebuildRibbon];
+    [self refreshModelNavigator];
+    [self setCommandStatus:@"Sketch mode — Line tool active; click two points in the graphics area"];
+    [self.window makeFirstResponder:self.graphicsView];
+    [self.graphicsView setNeedsDisplay:YES];
+}
+
+- (void)createSketchOnSupport:(const WcCocoaSketchSupport *)support
+{
+    if (support == NULL || g_callbacks.begin_new_sketch == NULL)
+        return;
+    uint32_t sketchId = 0;
+    const char *sketchName = NULL;
+    int status = g_callbacks.begin_new_sketch(g_userData, support, &sketchId, &sketchName);
+    if (status != 0)
+    {
+        [self setCommandStatus:[NSString stringWithFormat:@"Could not create sketch on selected support (SCL error %d)", status]];
+        return;
+    }
+    [self updateStatus];
+    [self enterSketchMode:sketchId name:sketchName];
+}
+
+- (void)beginNewSketch
+{
+    WcCocoaSketchSupport support;
+    if (WcSelectedSketchSupport(&support))
+    {
+        [self createSketchOnSupport:&support];
+        return;
+    }
+    g_state.sketch_support_mode = 1;
+    [self setCommandStatus:@"Sketch: select a datum plane, XY/YZ/XZ plane under a CSYS, or planar face in the viewport/Model Navigator"];
+    [self.window makeFirstResponder:self.graphicsView];
+}
+
+- (void)beginEditSketch:(uint32_t)sketchId
+{
+    if (g_callbacks.edit_sketch == NULL)
+        return;
+    const char *sketchName = NULL;
+    int status = g_callbacks.edit_sketch(g_userData, sketchId, &sketchName);
+    if (status != 0)
+    {
+        [self setCommandStatus:@"Selected feature is not an editable sketch"];
+        return;
+    }
+    [self enterSketchMode:sketchId name:sketchName];
+}
+
+- (void)finishSketch
+{
+    if (!g_state.sketch_mode)
+        return;
+    int status = g_callbacks.finish_sketch != NULL
+        ? g_callbacks.finish_sketch(g_userData, g_state.active_sketch_id) : 0;
+    if (status != 0)
+    {
+        [self setCommandStatus:[NSString stringWithFormat:@"Finish Sketch failed (SCL error %d)", status]];
+        return;
+    }
+    WcClearSnapTimer();
+    g_state.sketch_mode = 0;
+    g_state.sketch_support_mode = 0;
+    g_state.active_sketch_id = 0;
+    g_state.active_sketch_name[0] = '\0';
+    g_state.sketch_has_anchor = 0;
+    g_state.sketch_cursor_valid = 0;
+    g_state.snap_candidate_count = 0;
+    g_state.snap_choice_locked = 0;
+    g_state.active_ribbon_tab[0] = '\0';
+    g_state.zoom = 1.0;
+    g_state.pan_x = 0.0;
+    g_state.pan_y = 0.0;
+    [self rebuildRibbon];
+    [self updateStatus];
+    [self refreshModelNavigator];
+    [self setCommandStatus:@"Sketch finished — viewport navigation restored"];
+    [self.window makeFirstResponder:self.graphicsView];
+    [self.graphicsView setNeedsDisplay:YES];
+}
+
+- (void)sketchLineTool:(id)sender
+{
+    (void)sender;
+    g_state.sketch_tool = WC_COCOA_SKETCH_TOOL_LINE;
+    g_state.sketch_has_anchor = 0;
+    g_state.sketch_anchor_snap_feature = 0;
+    [self setCommandStatus:@"Sketch Line — click start point, then end point"];
+    [self.window makeFirstResponder:self.graphicsView];
+    [self.graphicsView setNeedsDisplay:YES];
+}
+
+- (void)sketchCircleTool:(id)sender
+{
+    (void)sender;
+    g_state.sketch_tool = WC_COCOA_SKETCH_TOOL_CIRCLE;
+    g_state.sketch_has_anchor = 0;
+    g_state.sketch_anchor_snap_feature = 0;
+    [self setCommandStatus:@"Sketch Circle — click centre, then radius point"];
+    [self.window makeFirstResponder:self.graphicsView];
+    [self.graphicsView setNeedsDisplay:YES];
+}
+
+- (void)sketchRectangleTool:(id)sender
+{
+    (void)sender;
+    g_state.sketch_tool = WC_COCOA_SKETCH_TOOL_RECTANGLE;
+    g_state.sketch_has_anchor = 0;
+    g_state.sketch_anchor_snap_feature = 0;
+    [self setCommandStatus:@"Sketch Rectangle — click first corner, then opposite corner"];
+    [self.window makeFirstResponder:self.graphicsView];
+    [self.graphicsView setNeedsDisplay:YES];
+}
+
+- (void)finishSketchClicked:(id)sender
+{
+    (void)sender;
+    [self finishSketch];
+}
+
+- (void)commitSketchX:(double)x y:(double)y snapFeature:(uint32_t)snapFeature snapPoint:(uint32_t)snapPoint
+{
+    g_state.sketch_cursor_x = x;
+    g_state.sketch_cursor_y = y;
+    g_state.sketch_cursor_valid = 1;
+    if (!g_state.sketch_has_anchor)
+    {
+        g_state.sketch_anchor_x = x;
+        g_state.sketch_anchor_y = y;
+        g_state.sketch_anchor_snap_feature = snapFeature;
+        g_state.sketch_anchor_snap_point = snapPoint;
+        g_state.sketch_has_anchor = 1;
+        [self setCommandStatus:g_state.sketch_tool == WC_COCOA_SKETCH_TOOL_LINE
+            ? @"Line: click end point"
+            : (g_state.sketch_tool == WC_COCOA_SKETCH_TOOL_CIRCLE
+                ? @"Circle: click radius point" : @"Rectangle: click opposite corner")];
+        [self.graphicsView setNeedsDisplay:YES];
+        return;
+    }
+
+    int status = 0;
+    if (g_state.sketch_tool == WC_COCOA_SKETCH_TOOL_LINE && g_callbacks.sketch_add_line != NULL)
+    {
+        if (hypot(x - g_state.sketch_anchor_x, y - g_state.sketch_anchor_y) > 1e-6)
+            status = g_callbacks.sketch_add_line(g_userData, g_state.active_sketch_id,
+                g_state.sketch_anchor_x, g_state.sketch_anchor_y, x, y,
+                g_state.sketch_anchor_snap_feature, g_state.sketch_anchor_snap_point,
+                snapFeature, snapPoint);
+    }
+    else if (g_state.sketch_tool == WC_COCOA_SKETCH_TOOL_CIRCLE && g_callbacks.sketch_add_circle != NULL)
+    {
+        double radius = hypot(x - g_state.sketch_anchor_x, y - g_state.sketch_anchor_y);
+        if (radius > 1e-6)
+            status = g_callbacks.sketch_add_circle(g_userData, g_state.active_sketch_id,
+                g_state.sketch_anchor_x, g_state.sketch_anchor_y, radius);
+    }
+    else if (g_state.sketch_tool == WC_COCOA_SKETCH_TOOL_RECTANGLE && g_callbacks.sketch_add_rectangle != NULL)
+    {
+        double minX = x < g_state.sketch_anchor_x ? x : g_state.sketch_anchor_x;
+        double minY = y < g_state.sketch_anchor_y ? y : g_state.sketch_anchor_y;
+        double width = fabs(x - g_state.sketch_anchor_x);
+        double height = fabs(y - g_state.sketch_anchor_y);
+        if (width > 1e-6 && height > 1e-6)
+            status = g_callbacks.sketch_add_rectangle(g_userData, g_state.active_sketch_id,
+                minX, minY, width, height);
+    }
+    g_state.sketch_has_anchor = 0;
+    g_state.sketch_anchor_snap_feature = 0;
+    g_state.sketch_anchor_snap_point = 0;
+    g_state.snap_choice_locked = 0;
+    if (status == 0)
+        [self setCommandStatus:@"Sketch entity added — draw another or Finish Sketch"];
+    else
+        [self setCommandStatus:[NSString stringWithFormat:@"Sketch draw failed (SCL error %d)", status]];
+    [self updateStatus];
+    [self.graphicsView setNeedsDisplay:YES];
+}
+
+- (void)snapTimerFired:(NSTimer *)timer
+{
+    if (timer != g_snapTimer)
+        return;
+    g_snapTimer = nil;
+    g_state.snap_ambiguity_ready = g_state.snap_candidate_count > 1;
+    [self.graphicsView setNeedsDisplay:YES];
+}
+
+- (void)showSnapChoiceMenuForView:(NSView *)view
+{
+    if (g_state.snap_candidate_count < 2)
+        return;
+    NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Choose sketch point"];
+    for (size_t i = 0; i < g_state.snap_candidate_count; ++i)
+    {
+        WcCocoaSnapCandidate *candidate = &g_state.snap_candidates[i];
+        NSString *title;
+        switch (candidate->kind)
+        {
+            case WC_COCOA_SNAP_ORIGIN: title = @"Sketch origin (0, 0)"; break;
+            case WC_COCOA_SNAP_X_AXIS: title = @"Sketch X axis"; break;
+            case WC_COCOA_SNAP_Y_AXIS: title = @"Sketch Y axis"; break;
+            case WC_COCOA_SNAP_CENTRE: title = @"Curve centre"; break;
+            case WC_COCOA_SNAP_CORNER: title = @"Rectangle corner"; break;
+            default: title = @"Endpoint"; break;
+        }
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:@selector(chooseSnapCandidate:) keyEquivalent:@""];
+        item.target = self;
+        item.representedObject = @(i);
+        [menu addItem:item];
+    }
+    NSEvent *event = NSApp.currentEvent;
+    if (event != nil)
+        [NSMenu popUpContextMenu:menu withEvent:event forView:view];
+}
+
+- (void)chooseSnapCandidate:(NSMenuItem *)sender
+{
+    NSUInteger index = [sender.representedObject unsignedIntegerValue];
+    if (index >= g_state.snap_candidate_count)
+        return;
+    WcCocoaSnapCandidate candidate = g_state.snap_candidates[index];
+    g_state.snap_choice = candidate;
+    g_state.snap_choice_locked = 1;
+    WcClearSnapTimer();
+    [self commitSketchX:candidate.x y:candidate.y snapFeature:candidate.feature_id snapPoint:candidate.point_index];
+}
+
+
 /* -- ribbon ---------------------------------------------------------- */
 
 - (const WcCocoaRibbonSnapshot *)activeRibbon
@@ -1491,6 +3693,8 @@ static int WcFitFeature(uint32_t featureId)
     if (tabId == NULL || tabId[0] == '\0')
         return NO;
     if (strcmp(tabId, "global.sections") == 0 || strcmp(tabId, "global.mods") == 0)
+        return YES;
+    if (g_state.sketch_mode && strcmp(tabId, "sketch.edit") == 0)
         return YES;
     if (ribbon == NULL)
         return NO;
@@ -1532,6 +3736,12 @@ static int WcFitFeature(uint32_t featureId)
 
 - (void)chooseSection:(const char *)sectionId
 {
+    if (g_state.sketch_mode && sectionId != NULL && strcmp(sectionId, "modelling") != 0)
+    {
+        [self finishSketch];
+        if (g_state.sketch_mode)
+            return;
+    }
     int ok = g_callbacks.choose_section != NULL ? g_callbacks.choose_section(g_userData, sectionId) : 0;
     if (!ok)
     {
@@ -1560,10 +3770,10 @@ static int WcFitFeature(uint32_t featureId)
     const char *templateText;
     int status;
 
-    /* Interactive sketch mode is GTK4-only in this increment. */
+    /* Sketch is a direct interactive graphics workflow on both native front-ends. */
     if (strcmp(commandId, "modelling.sketch") == 0)
     {
-        [self setCommandStatus:@"Interactive sketch mode is GTK4-only in this Cocoa increment; use sketch(:name, :XY) then sketch_rect/sketch_line/sketch_circle_at"];
+        [self beginNewSketch];
         return;
     }
     if (strcmp(commandId, "modelling.measure") == 0 || strcmp(commandId, "modelling.mass_properties") == 0)
@@ -1621,18 +3831,26 @@ static int WcFitFeature(uint32_t featureId)
         return;
     }
 
-    templateText = g_callbacks.ribbon_template != NULL ? g_callbacks.ribbon_template(g_userData, commandId) : NULL;
-    if (templateText == NULL || templateText[0] == '\0')
+    const WcFeatureDialogueDescriptorV1 *dialogue = g_callbacks.feature_dialogue != NULL
+        ? g_callbacks.feature_dialogue(g_userData, commandId) : NULL;
+    if (dialogue != NULL)
     {
-        [self setCommandStatus:[NSString stringWithFormat:@"No semantic template for %@", WcString(commandId)]];
+        [self showFeatureDialogue:dialogue featureId:0];
+        return;
+    }
+
+    templateText = g_callbacks.ribbon_template != NULL ? g_callbacks.ribbon_template(g_userData, commandId) : NULL;
+    if (templateText == NULL || templateText[0] == '\0' || templateText[0] == '#')
+    {
+        [self setCommandStatus:@"This ribbon action is not implemented yet"];
         return;
     }
     (void)snprintf(mutableCommand, sizeof(mutableCommand), "%s", templateText);
     status = [self submitLine:mutableCommand];
     if (status == 0)
-        [self setCommandStatus:[NSString stringWithFormat:@"%@: template submitted", WcHumanise(commandId)]];
+        [self setCommandStatus:[NSString stringWithFormat:@"%@: action completed", WcHumanise(commandId)]];
     else
-        [self setCommandStatus:[NSString stringWithFormat:@"%@: SCL error %d (feature dialogues are GTK4-only in this increment)", WcHumanise(commandId), status]];
+        [self setCommandStatus:[NSString stringWithFormat:@"%@: SCL error %d", WcHumanise(commandId), status]];
     [self updateStatus];
     [self.graphicsView setNeedsDisplay:YES];
 }
@@ -1681,18 +3899,16 @@ static int WcFitFeature(uint32_t featureId)
 - (NSButton *)makeIconTextButton:(const char *)iconName title:(NSString *)title iconSize:(CGFloat)iconSize
                           action:(SEL)action tag:(NSInteger)tag
 {
-    NSButton *button = [NSButton buttonWithTitle:title target:self action:action];
-    button.bezelStyle = NSBezelStyleRounded;
-    button.font = [NSFont systemFontOfSize:9];
+    WcRibbonButton *button = [[WcRibbonButton alloc] initWithFrame:NSZeroRect];
+    button.title = title != nil ? title : @"";
+    button.target = self;
+    button.action = action;
     button.tag = tag;
-    NSImage *icon = WcLoadIcon(iconName, iconSize);
-    if (icon != nil)
-    {
-        button.image = icon;
-        button.imagePosition = NSImageAbove;
-        button.imageScaling = NSImageScaleProportionallyDown;
-    }
-    [[button cell] setLineBreakMode:NSLineBreakByTruncatingTail];
+    button.buttonType = NSButtonTypeMomentaryChange;
+    button.bordered = NO;
+    button.focusRingType = NSFocusRingTypeNone;
+    button.iconExtent = iconSize;
+    button.image = WcLoadIcon(iconName, iconSize);
     return button;
 }
 
@@ -1701,14 +3917,12 @@ static int WcFitFeature(uint32_t featureId)
    size and clamp it to the GTK4 minimums for consistent ribbons. */
 - (CGSize)sizeForIconButton:(NSButton *)button minWidth:(CGFloat)minWidth minHeight:(CGFloat)minHeight
 {
-    [button sizeToFit];
-    CGFloat width = button.frame.size.width + 10.0;
-    CGFloat height = button.frame.size.height + 6.0;
-    if (width < minWidth)
-        width = minWidth;
-    if (height < minHeight)
-        height = minHeight;
-    return NSMakeSize(width, height);
+    /* GTK4 gives every command in a density class the same requested size.
+       AppKit's sizeToFit would widen buttons according to caption length,
+       producing the visibly uneven Cocoa ribbon.  Use the GTK4 request as
+       the exact Cocoa cell size and let the caption truncate if necessary. */
+    (void)button;
+    return NSMakeSize(minWidth, minHeight);
 }
 
 - (WcGroupView *)beginGroup:(NSString *)caption
@@ -1737,7 +3951,19 @@ static int WcFitFeature(uint32_t featureId)
     [self.tabsHost addSubview:modsTab];
     x += 68.0;
 
-    if (ribbon == NULL || ribbon->tab_count == 0)
+    if (g_state.sketch_mode)
+    {
+        if (![self ribbonHasTab:g_state.active_ribbon_tab])
+            WcCopyText(g_state.active_ribbon_tab, sizeof(g_state.active_ribbon_tab), "sketch.edit");
+        NSString *sketchTitle = [NSString stringWithFormat:@"Sketch • %s",
+            g_state.active_sketch_name[0] != '\0' ? g_state.active_sketch_name : "sketch"];
+        WcTabButton *tab = [self makeTabButton:sketchTitle tabId:"sketch.edit"];
+        NSSize natural = [[tab cell] cellSize];
+        CGFloat width = natural.width + 20 < 100 ? 100 : natural.width + 20;
+        tab.frame = NSMakeRect(x, 1, width, 26);
+        [self.tabsHost addSubview:tab];
+    }
+    else if (ribbon == NULL || ribbon->tab_count == 0)
     {
         if (![self ribbonHasTab:g_state.active_ribbon_tab])
             WcCopyText(g_state.active_ribbon_tab, sizeof(g_state.active_ribbon_tab), "global.sections");
@@ -1780,35 +4006,34 @@ static int WcFitFeature(uint32_t featureId)
             entries = g_callbacks.section_entries(g_userData, &count);
         WcGroupView *group = [self beginGroup:@"Sections"];
         [self.sectionIds removeAllObjects];
-        CGFloat innerX = 5.0, innerY = 16.0;
-        CGFloat groupWidth = 10.0, groupHeight = 32.0;
-        size_t inRow = 0;
+        /* The AppKit ribbon has a fixed 112 px command viewport.  Unlike GTK,
+           it does not grow vertically to the natural height of two 70 px rows.
+           Use a dedicated compact Section launcher size and place row zero at
+           the top so Modelling/Assembly/PMI/Drawing appear in the same order as
+           GTK4 rather than being vertically reversed and clipped. */
+        const CGFloat sectionWidth = compact ? 62.0 : 72.0;
+        const CGFloat sectionHeight = 44.0;
+        const CGFloat sectionGap = 2.0;
+        size_t rowTotal = count == 0 ? 1u : (count + 3u) / 4u;
+        size_t columnTotal = count < 4u ? count : 4u;
+        if (columnTotal == 0) columnTotal = 1u;
+        CGFloat groupWidth = 10.0 + columnTotal * sectionWidth + (columnTotal - 1u) * sectionGap;
+        CGFloat groupHeight = 16.0 + rowTotal * sectionHeight + (rowTotal - 1u) * sectionGap + 4.0;
         for (size_t i = 0; entries != NULL && i < count; ++i)
         {
+            size_t rowIndex = i / 4u;
+            size_t columnIndex = i % 4u;
+            CGFloat innerX = 5.0 + columnIndex * (sectionWidth + sectionGap);
+            CGFloat innerY = 16.0 + (rowTotal - 1u - rowIndex) * (sectionHeight + sectionGap);
             NSButton *button = [self makeIconTextButton:entries[i].icon_name
                                                   title:WcHumanise(entries[i].id)
-                                               iconSize:compact ? 22 : 30
+                                               iconSize:18.0
                                                  action:@selector(onSectionButtonClicked:)
                                                     tag:(NSInteger)i];
             button.toolTip = WcString(entries[i].id);
-            CGSize sectionNatural = [self sizeForIconButton:button
-                                                  minWidth:compact ? 62.0 : 80.0
-                                                 minHeight:compact ? 50.0 : 70.0];
-            if (inRow == 4)
-            {
-                inRow = 0;
-                innerX = 5.0;
-                innerY += sectionNatural.height + 2.0;
-            }
-            button.frame = NSMakeRect(innerX, innerY, sectionNatural.width, sectionNatural.height);
+            button.frame = NSMakeRect(innerX, innerY, sectionWidth, sectionHeight);
             [group addSubview:button];
             [self.sectionIds addObject:WcString(entries[i].id)];
-            innerX += sectionNatural.width + 2.0;
-            if (innerX + 5.0 > groupWidth)
-                groupWidth = innerX + 5.0;
-            if (innerY + sectionNatural.height + 16.0 > groupHeight)
-                groupHeight = innerY + sectionNatural.height + 16.0;
-            ++inRow;
         }
         group.frame = NSMakeRect(docX, 2, groupWidth, groupHeight);
         [document addSubview:group];
@@ -1839,6 +4064,38 @@ static int WcFitFeature(uint32_t featureId)
         mods.frame = NSMakeRect(docX, 2, modsNatural.width + 10, modsNatural.height + 34);
         [document addSubview:mods];
         docX += 106.0;
+    }
+    else if (g_state.sketch_mode && strcmp(g_state.active_ribbon_tab, "sketch.edit") == 0)
+    {
+        WcGroupView *draw = [self beginGroup:@"Draw"];
+        NSButton *line = [self makeIconTextButton:"cmd_line" title:@"Line" iconSize:24
+                                              action:@selector(sketchLineTool:) tag:0];
+        NSButton *circle = [self makeIconTextButton:"cmd_circle" title:@"Circle" iconSize:24
+                                                action:@selector(sketchCircleTool:) tag:0];
+        NSButton *rectangle = [self makeIconTextButton:"cmd_rectangle" title:@"Rectangle" iconSize:24
+                                                   action:@selector(sketchRectangleTool:) tag:0];
+        CGSize lineSize = [self sizeForIconButton:line minWidth:62 minHeight:52];
+        CGSize circleSize = [self sizeForIconButton:circle minWidth:62 minHeight:52];
+        CGSize rectSize = [self sizeForIconButton:rectangle minWidth:62 minHeight:52];
+        line.frame = NSMakeRect(5, 16, lineSize.width, lineSize.height);
+        circle.frame = NSMakeRect(7 + lineSize.width, 16, circleSize.width, circleSize.height);
+        rectangle.frame = NSMakeRect(9 + lineSize.width + circleSize.width, 16, rectSize.width, rectSize.height);
+        [draw addSubview:line]; [draw addSubview:circle]; [draw addSubview:rectangle];
+        CGFloat drawHeight = MAX(lineSize.height, MAX(circleSize.height, rectSize.height)) + 34;
+        CGFloat drawWidth = lineSize.width + circleSize.width + rectSize.width + 16;
+        draw.frame = NSMakeRect(docX, 2, drawWidth, drawHeight);
+        [document addSubview:draw];
+        docX += drawWidth + 4.0;
+
+        WcGroupView *finish = [self beginGroup:@"Sketch"];
+        NSButton *finishButton = [self makeIconTextButton:"cmd_finish_sketch" title:@"Finish Sketch" iconSize:24
+                                                       action:@selector(finishSketchClicked:) tag:0];
+        CGSize finishSize = [self sizeForIconButton:finishButton minWidth:62 minHeight:52];
+        finishButton.frame = NSMakeRect(5, 16, finishSize.width, finishSize.height);
+        [finish addSubview:finishButton];
+        finish.frame = NSMakeRect(docX, 2, finishSize.width + 10, finishSize.height + 34);
+        [document addSubview:finish];
+        docX += finishSize.width + 14;
     }
     else if (ribbon == NULL)
     {
@@ -1994,7 +4251,7 @@ static int WcFitFeature(uint32_t featureId)
         placeholder.realFeature = NO;
         [g_rows addObject:placeholder];
         g_state.selected_feature_id = 0;
-        [self.table reloadData];
+        [self reloadNavigatorKeepingSelection];
         return;
     }
 
@@ -2007,6 +4264,7 @@ static int WcFitFeature(uint32_t featureId)
             [text appendString:@"  [CSYS]"];
         WcRow *row = [[WcRow alloc] init];
         row.text = text;
+        row.featureName = rows[i].name != NULL ? WcString(rows[i].name) : @"feature";
         row.featureId = rows[i].id;
         row.featureKind = rows[i].kind;
         row.exactStatus = rows[i].exact_status;
@@ -2028,6 +4286,7 @@ static int WcFitFeature(uint32_t featureId)
                 planeRow.depth = (int)rows[i].dependency_depth + 1;
                 planeRow.supportKind = 2;
                 planeRow.supportFeatureId = rows[i].id;
+                planeRow.csysPlane = WcString(planes[pi]);
                 planeRow.realFeature = NO;
                 [g_rows addObject:planeRow];
             }
@@ -2052,22 +4311,56 @@ static int WcFitFeature(uint32_t featureId)
     [self reloadNavigatorKeepingSelection];
 }
 
+- (void)layoutNavigatorTable
+{
+    if (self.table == nil || self.tableScroll == nil)
+        return;
+    CGFloat width = MAX(self.tableScroll.contentSize.width, 120.0);
+    CGFloat contentHeight = MAX(self.tableScroll.contentSize.height,
+        (CGFloat)g_rows.count * MAX(self.table.rowHeight, 20.0) + 4.0);
+    self.table.frame = NSMakeRect(0, 0, width, contentHeight);
+    if (self.table.tableColumns.count > 0)
+        self.table.tableColumns[0].width = width;
+    [self.table noteNumberOfRowsChanged];
+}
+
 - (void)reloadNavigatorKeepingSelection
 {
     self.programmaticSelection = YES;
     [self.table reloadData];
-    if (g_state.selected_feature_id != 0)
+    [self layoutNavigatorTable];
+    NSInteger selected = -1;
+    for (NSUInteger i = 0; i < g_rows.count; ++i)
     {
-        for (NSUInteger i = 0; i < g_rows.count; ++i)
+        WcRow *row = g_rows[i];
+        if (g_state.selected_row_is_feature)
         {
-            WcRow *row = g_rows[i];
             if (row.realFeature && row.featureId == g_state.selected_feature_id)
             {
-                [self.table selectRowIndexes:[NSIndexSet indexSetWithIndex:i] byExtendingSelection:NO];
+                selected = (NSInteger)i;
                 break;
             }
         }
+        else if (!row.realFeature && row.supportKind == g_state.selected_support_kind &&
+                 row.supportFeatureId == g_state.selected_support_feature_id)
+        {
+            if (row.supportKind == WC_COCOA_SKETCH_SUPPORT_PLANAR_FACE &&
+                row.faceId != g_state.selected_face_persistent_id)
+                continue;
+            if (row.supportKind == WC_COCOA_SKETCH_SUPPORT_CSYS_PLANE &&
+                ![row.csysPlane isEqualToString:WcString(g_state.selected_csys_plane)])
+                continue;
+            selected = (NSInteger)i;
+            break;
+        }
     }
+    if (selected >= 0)
+    {
+        [self.table selectRowIndexes:[NSIndexSet indexSetWithIndex:(NSUInteger)selected] byExtendingSelection:NO];
+        [self.table scrollRowToVisible:selected];
+    }
+    else
+        [self.table deselectAll:nil];
     self.programmaticSelection = NO;
 }
 
@@ -2086,10 +4379,20 @@ static int WcFitFeature(uint32_t featureId)
     }
 }
 
-- (NSInteger)numberOfRowsInTable:(NSTableView *)tableView
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView
 {
     (void)tableView;
     return (NSInteger)g_rows.count;
+}
+
+- (id)tableView:(NSTableView *)tableView objectValueForTableColumn:(NSTableColumn *)tableColumn row:(NSInteger)row
+{
+    (void)tableView;
+    (void)tableColumn;
+    if (row < 0 || (NSUInteger)row >= g_rows.count)
+        return @"";
+    WcRow *record = g_rows[(NSUInteger)row];
+    return record.text != nil ? record.text : @"";
 }
 
 - (NSView *)tableView:(NSTableView *)tableView viewForTableColumn:(NSTableColumn *)tableColumn row:(NSInteger)row
@@ -2154,20 +4457,53 @@ static int WcFitFeature(uint32_t featureId)
     g_state.selected_feature_depth = 0;
     g_state.selected_feature_name[0] = '\0';
     g_state.selected_body_feature_id = 0;
-    if (row >= 0 && (size_t)row < g_rows.count)
+    g_state.selected_support_kind = WC_COCOA_SKETCH_SUPPORT_NONE;
+    g_state.selected_support_feature_id = 0;
+    g_state.selected_face_persistent_id = 0;
+    g_state.selected_csys_plane[0] = '\0';
+    g_state.selected_row_is_feature = 0;
+    if (row < 0 || (size_t)row >= g_rows.count)
     {
-        WcRow *record = g_rows[(NSUInteger)row];
-        g_state.selected_feature_id = record.featureId;
-        g_state.selected_feature_kind = record.featureKind;
-        g_state.selected_feature_exact_status = record.exactStatus;
-        g_state.selected_feature_depth = (uint32_t)record.depth;
-        WcCopyText(g_state.selected_feature_name, sizeof(g_state.selected_feature_name), [record.text UTF8String]);
-        if (record.realFeature)
-        {
-            WcCocoaBodyRow body;
-            if (WcBodyBoundsForFeature(record.featureId, &body))
-                g_state.selected_body_feature_id = record.featureId;
-        }
+        [self.graphicsView setNeedsDisplay:YES];
+        return;
+    }
+
+    WcRow *record = g_rows[(NSUInteger)row];
+    g_state.selected_feature_id = record.featureId;
+    g_state.selected_feature_kind = record.featureKind;
+    g_state.selected_feature_exact_status = record.exactStatus;
+    g_state.selected_feature_depth = (uint32_t)record.depth;
+    g_state.selected_support_kind = record.supportKind;
+    g_state.selected_support_feature_id = record.supportFeatureId;
+    g_state.selected_face_persistent_id = record.faceId;
+    g_state.selected_row_is_feature = record.realFeature ? 1 : 0;
+    if (record.csysPlane.length > 0)
+        WcCopyText(g_state.selected_csys_plane, sizeof(g_state.selected_csys_plane), record.csysPlane.UTF8String);
+    if (record.featureName.length > 0)
+        WcCopyText(g_state.selected_feature_name, sizeof(g_state.selected_feature_name), record.featureName.UTF8String);
+    else
+    {
+        char name[WC_COCOA_UI_ID_CAPACITY];
+        if (WcFeatureNameForId(record.featureId, name, sizeof(name)))
+            WcCopyText(g_state.selected_feature_name, sizeof(g_state.selected_feature_name), name);
+    }
+    if (record.realFeature)
+    {
+        WcCocoaBodyRow body;
+        if (WcBodyBoundsForFeature(record.featureId, &body))
+            g_state.selected_body_feature_id = record.featureId;
+    }
+
+    if (g_state.feature_pick_active && record.realFeature)
+    {
+        (void)[self acceptFeaturePick:record.featureId name:g_state.selected_feature_name];
+        [self.graphicsView setNeedsDisplay:YES];
+        return;
+    }
+    if (g_state.sketch_support_mode && record.supportKind != WC_COCOA_SKETCH_SUPPORT_NONE)
+    {
+        [self beginNewSketch];
+        return;
     }
     [self reloadNavigatorKeepingSelection];
     [self.graphicsView setNeedsDisplay:YES];
@@ -2178,11 +4514,26 @@ static int WcFitFeature(uint32_t featureId)
     NSInteger row = sender.clickedRow;
     if (row < 0 || (size_t)row >= g_rows.count)
         return;
+    if (self.featureDialogPanel != nil && self.featureDialogPanel.visible)
+        return;
     WcRow *record = g_rows[(NSUInteger)row];
     if (!record.realFeature)
         return;
     g_state.selected_feature_id = record.featureId;
     g_state.selected_feature_kind = record.featureKind;
+    g_state.selected_row_is_feature = 1;
+    if (record.featureName.length > 0)
+        WcCopyText(g_state.selected_feature_name, sizeof(g_state.selected_feature_name), record.featureName.UTF8String);
+    if (g_callbacks.feature_dialogue_for_feature != NULL)
+    {
+        const WcFeatureDialogueDescriptorV1 *dialogue =
+            g_callbacks.feature_dialogue_for_feature(g_userData, record.featureId);
+        if (dialogue != NULL)
+        {
+            [self showFeatureDialogue:dialogue featureId:record.featureId];
+            return;
+        }
+    }
     [self showFeatureProperties:record.featureId];
 }
 
@@ -2211,7 +4562,7 @@ static int WcFitFeature(uint32_t featureId)
         NSMenuItem *editSketch = [[NSMenuItem alloc] initWithTitle:@"Edit Sketch" action:@selector(navigatorEditSketch:) keyEquivalent:@""];
         editSketch.target = self;
         editSketch.representedObject = @(row);
-        editSketch.enabled = NO; /* interactive sketch mode is GTK4-only in this increment */
+        editSketch.enabled = g_callbacks.edit_sketch != NULL;
         [menu addItem:editSketch];
     }
     NSMenuItem *deleteItem = [[NSMenuItem alloc] initWithTitle:@"Delete" action:@selector(navigatorDelete:) keyEquivalent:@""];
@@ -2242,8 +4593,9 @@ static int WcFitFeature(uint32_t featureId)
 
 - (void)navigatorEditSketch:(NSMenuItem *)sender
 {
-    (void)sender;
-    [self setCommandStatus:@"Interactive sketch editing is GTK4-only in this Cocoa increment"];
+    WcRow *record = [self rowForMenuItem:sender];
+    if (record != nil)
+        [self beginEditSketch:record.featureId];
 }
 
 - (void)navigatorDelete:(NSMenuItem *)sender
@@ -2431,6 +4783,15 @@ static int WcFitFeature(uint32_t featureId)
 
 - (void)showFeatureProperties:(uint32_t)featureId
 {
+    if (g_callbacks.feature_dialogue_for_feature != NULL)
+    {
+        const WcFeatureDialogueDescriptorV1 *dialogue = g_callbacks.feature_dialogue_for_feature(g_userData, featureId);
+        if (dialogue != NULL)
+        {
+            [self showFeatureDialogue:dialogue featureId:featureId];
+            return;
+        }
+    }
     WcCocoaBodyRow body;
     NSMutableString *text = [NSMutableString string];
     [text appendFormat:@"Feature ID: %u\nKind: %u\nGeometry: %s\nDependency depth: %u\n",
@@ -2927,8 +5288,8 @@ static NSImage *WcFindNightcore(void)
     };
     for (int i = 0; paths[i] != NULL; ++i)
     {
-        NSString *path = [NSString stringWithUTF8String:paths[i]];
-        if ([[NSFileManager defaultManager] fileExistsAtPath:path])
+        NSString *path = WcResolveProjectPath([NSString stringWithUTF8String:paths[i]]);
+        if (path != nil)
         {
             NSImage *image = [[NSImage alloc] initWithContentsOfFile:path];
             if (image != nil)
@@ -2953,6 +5314,13 @@ int wc_cocoa_run(const WcCocoaWindowConfig *config,
     g_state.zoom = 1.0;
     g_state.window_width_hint = config->width;
     g_state.ribbon_density = config->width < 820 ? 2 : (config->width < 1180 ? 1 : 0);
+    {
+        const char *showBounds = getenv("WC_SHOW_BODY_BOUNDS");
+        g_showDiagnosticBodyBounds = showBounds != NULL && showBounds[0] != '\0' && strcmp(showBounds, "0") != 0;
+    }
+    fprintf(stdout, "WaifuCAD Cocoa parity build: %s\n", WC_COCOA_PARITY_BUILD);
+    fprintf(stdout, "WaifuCAD Cocoa renderer: exact planar faces; direct sketch supports; empty-CSYS alignment fixed; diagnostic bounds: %s\n",
+            g_showDiagnosticBodyBounds ? "diagnostic-on" : "off");
     g_rows = [NSMutableArray array];
     g_navigatorColour = WcHex(config->navigator_background, WcHex("#171321", nil));
     g_railColour = WcHex(config->navigator_rail_background, WcHex("#100D18", nil));
@@ -2986,3 +5354,4 @@ int wc_cocoa_run(const WcCocoaWindowConfig *config,
     }
     return 0;
 }
+

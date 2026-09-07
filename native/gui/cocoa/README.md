@@ -1,36 +1,38 @@
 # Cocoa native bridge
 
 `wc_cocoa.h` defines the C ABI between the BetterC D host and the native
-macOS front-end; it is a layout-compatible mirror of the GTK4 bridge ABI,
-so the D host passes the same toolkit-neutral ribbon/section descriptors
-and semantic row data to both front-ends. `wc_cocoa.m` is the functional
-AppKit/Metal bridge (v2, GTK4 layout/feature parity): ribbon with
-persistent Sections/Mods tabs + contextual tab row + horizontally
-scrolling icon command groups (project SVGs from `assets/icons/`,
-humanised captions, compact-mode rules), Nightcore art top-right,
-Model/Assembly/AI navigator rail with collapsible navigator pane (feature
-rows with exact/preview/failed badges, CSYS-plane and planar-face child
-rows, right-click Edit-Properties/Fit/Delete, drag-and-drop dependency-safe
-reordering), graphics area running the GTK4 draw pipeline (grid,
-translucent body bounds, sketches on their real support frames, planar-face
-hover/selection highlight, CSYS frames with positive-quadrant planes, axis
-triad) over a Metal clear pass, with middle-drag orbit, cursor-centred
-wheel zoom, WASD pan, Home reset, body/face hit-test selection and Fit
-menus, plus the centred command-console overlay and status bar. Every
-widget action routes through the semantic SCL/journal command path — never
-direct model mutation.
+macOS front-end. It mirrors the GTK4 host contracts for toolkit-neutral
+ribbon/section descriptors, model/navigator rows, data-driven feature
+dialogues and interactive sketch operations. `wc_cocoa.m` is the native
+AppKit/Metal bridge. All modelling mutations continue through semantic
+SCL/journal callbacks rather than direct model access.
 
-`wc_cocoa_stub.c` is the headless fallback used on non-macOS build hosts so
-the macOS GUI target always links (cross/CI layouts); it reports the bridge
-as unavailable and returns 78.
+The AppKit host now provides the same current GUI workflows as GTK4: project
+SVG ribbon icons with bundle/project-root resolution plus an AppKit fallback
+renderer for the project SVG subset (so icon display does not depend on
+`NSImage` SVG support), persistent Sections/Mods tabs, contextual ribbon
+groups, the Model/Assembly/AI rail and collapsible
+navigator, editable feature dialogues generated from
+`FeatureDialogueDescriptorV1`, semantic profile/body/path selection, native
+file choosers, and sketch creation/editing on datum planes, CSYS planes and
+planar faces. Sketch mode includes Line/Circle/Rectangle tools, live preview,
+endpoint/corner/centre/origin/axis snapping, the one-second ambiguity chooser,
+cursor-centred wheel zoom and middle-drag pan. The Model Navigator implements
+AppKit's exact `NSTableViewDataSource` selectors (`numberOfRowsInTableView:` and
+`tableView:objectValueForTableColumn:row:`); keep those names covered by the
+static contract because a near-miss selector causes AppKit to reject the data
+source at runtime. Ribbon command cells use the same fixed density-class sizes
+as GTK4 rather than `sizeToFit`, keeping buttons uniform.
 
-`build.sh` compiles `wc_cocoa.m` with `-fobjc-arc` and links
-`-framework Cocoa -framework Metal -framework QuartzCore` when the build
-host is macOS, and falls back to the stub otherwise. Do not add GTK4 probes
-or dependencies to the macOS GUI path.
+The graphics area still uses the same bootstrap bounds/sketch/construction
+display policy as GTK4, drawn over a Metal clear pass. The dedicated Metal
+WaifuBRep renderer is separate graphics-backend work and remains TODO. Locale
+label lookup from `assets/locales/` also remains TODO.
 
-Still TODO for full GTK4 parity (tracked in AGENTS.MD): data-driven feature
-dialogues (ribbon commands submit their semantic SCL template and report
-the result instead), interactive sketch mode with snapping,
-`assets/locales/` label lookup, and the dedicated Metal WaifuBRep renderer
-replacing the GTK4-equivalent bounds-wireframe display.
+`wc_cocoa_stub.c` is the headless fallback used on non-macOS build hosts.
+`build.sh` compiles `wc_cocoa.m` with `-fobjc-arc` and links `-framework Cocoa
+-framework Metal -framework QuartzCore` on macOS; the macOS GUI path must not
+probe or require GTK4.
+
+
+Generic body bounds are not part of the default CAD display. Set `WC_SHOW_BODY_BOUNDS=1` only when the bootstrap bounds overlay is useful for renderer diagnostics; selected-body bounds remain a selection aid.

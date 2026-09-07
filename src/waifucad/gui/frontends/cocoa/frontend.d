@@ -2,36 +2,22 @@ module waifucad.gui.frontends.cocoa.frontend;
 
 import core.stdc.stdio : snprintf;
 import waifucad.gui.api : GuiFrontendV1, WC_GUI_FRONTEND_ABI_V1;
-import waifucad.gui.command_console : CommandConsoleState;
-import waifucad.gui.ribbon_actions : ribbonCommandTemplate;
 import waifucad.gui.ribbon_host : RibbonHostState;
+import waifucad.gui.ribbon_actions : ribbonCommandTemplate;
+import waifucad.gui.feature_dialogues : FeatureDialogueDescriptorV1, FeatureDialogueFieldSource,
+    featureDialogueForCommand, featureDialogueForFeature, featureDialogueAcceptsSelection;
+import waifucad.gui.command_console : CommandConsoleState;
 import waifucad.journal.backend_api : ScriptContext;
-import waifucad.kernel.datums : DatumFrame, datumFeatureFrame, sketchFrame;
 import waifucad.kernel.model : Model;
 import waifucad.kernel.types : ExactGeometryStatus, FeatureKind, OperandKind;
-import waifucad.brep.naming : persistentTopologyOwner, persistentTopologySlot;
-import waifucad.brep.properties : massProperties;
+import waifucad.kernel.datums : DatumFrame, datumFeatureFrame, sketchFrame;
 import waifucad.brep.types : BRepSurfaceKind;
+import waifucad.brep.properties : massProperties;
+import waifucad.brep.naming : persistentTopologyOwner, persistentTopologySlot;
 import waifucad.sections.api : SectionDescriptorV1;
 import waifucad.sections.ribbon : SectionRibbonV1;
 
-/*
- * Cocoa/AppKit is the native macOS front-end. This module owns the D side of
- * the wc_cocoa.h C ABI, which mirrors the GTK4 bridge ABI: the same
- * toolkit-neutral ribbon/section descriptors are passed straight through and
- * the same semantic row data feeds both hosts. Every model mutation from the
- * AppKit bridge arrives as a semantic SCL command through the shared console
- * path, exactly like GTK4; nothing here exposes raw model pointers to the
- * toolkit beyond borrowed descriptor/row data with the same lifetimes GTK4
- * already relies on.
- *
- * Not yet wired for Cocoa (tracked parity work): data-driven feature
- * dialogues and interactive sketch mode (begin/edit/finish, sketch_add_*).
- */
-
-enum WC_COCOA_FACE_MAX_POINTS = 24u;
-
-extern(C) struct WcCocoaWindowConfig
+struct WcCocoaWindowConfig
 {
     int width;
     int height;
@@ -43,11 +29,15 @@ extern(C) struct WcCocoaWindowConfig
     int forceSoftwareVulkan;
 }
 
-extern(C) struct WcCocoaModelSnapshot
+struct WcCocoaModelSnapshot
 {
     const(char)* modelName;
-    double minX, minY, minZ;
-    double maxX, maxY, maxZ;
+    double minX;
+    double minY;
+    double minZ;
+    double maxX;
+    double maxY;
+    double maxZ;
     uint featureCount;
     uint exactCount;
     uint previewCount;
@@ -55,7 +45,7 @@ extern(C) struct WcCocoaModelSnapshot
     int boundsValid;
 }
 
-extern(C) struct WcCocoaFeatureRow
+struct WcCocoaFeatureRow
 {
     uint id;
     const(char)* name;
@@ -66,17 +56,21 @@ extern(C) struct WcCocoaFeatureRow
     uint dirty;
 }
 
-extern(C) struct WcCocoaBodyRow
+struct WcCocoaBodyRow
 {
     uint featureId;
     const(char)* name;
     uint kind;
     uint exactStatus;
-    double minX, minY, minZ;
-    double maxX, maxY, maxZ;
+    double minX;
+    double minY;
+    double minZ;
+    double maxX;
+    double maxY;
+    double maxZ;
 }
 
-extern(C) struct WcCocoaMassProperties
+struct WcCocoaMassProperties
 {
     int valid;
     double volume;
@@ -84,7 +78,7 @@ extern(C) struct WcCocoaMassProperties
     double[3] centreOfMass;
 }
 
-extern(C) struct WcCocoaCsysRow
+struct WcCocoaCsysRow
 {
     uint featureId;
     const(char)* name;
@@ -94,7 +88,7 @@ extern(C) struct WcCocoaCsysRow
     double[3] zAxis;
 }
 
-extern(C) struct WcCocoaSketchGeometryRow
+struct WcCocoaSketchGeometryRow
 {
     uint id;
     uint sketchId;
@@ -106,18 +100,36 @@ extern(C) struct WcCocoaSketchGeometryRow
     double[3] frameYAxis;
 }
 
-extern(C) struct WcCocoaPlanarFaceRow
+enum WC_COCOA_FACE_MAX_POINTS = 24;
+
+struct WcCocoaPlanarFaceRow
 {
     ulong persistentId;
     uint ownerFeatureId;
     uint semanticSlot;
     const(char)* ownerName;
     uint pointCount;
-    double[WC_COCOA_FACE_MAX_POINTS * 3u] points;
+    double[WC_COCOA_FACE_MAX_POINTS * 3] points;
 }
 
-/* Layout-compatible with SectionDescriptorV1 (borrowed pointer array). */
-extern(C) struct WcCocoaSectionEntry
+enum WcCocoaSketchSupportKind : uint
+{
+    none = 0,
+    datumPlane = 1,
+    csysPlane = 2,
+    planarFace = 3
+}
+
+struct WcCocoaSketchSupport
+{
+    uint kind;
+    uint featureId;
+    ulong facePersistentId;
+    const(char)* csysPlane;
+}
+
+/* These layouts intentionally mirror the toolkit-neutral Section/ribbon ABI. */
+struct WcCocoaSectionEntry
 {
     uint abiVersion;
     const(char)* id;
@@ -126,16 +138,14 @@ extern(C) struct WcCocoaSectionEntry
     uint capabilities;
 }
 
-/* Layout-compatible with RibbonTabDescriptorV1 / RibbonCommandDescriptorV1 /
-   SectionRibbonV1 so the contextual ribbon is passed straight through. */
-extern(C) struct WcCocoaRibbonTab
+struct WcCocoaRibbonTab
 {
     const(char)* id;
     const(char)* localisationKey;
     const(char)* iconName;
 }
 
-extern(C) struct WcCocoaRibbonCommand
+struct WcCocoaRibbonCommand
 {
     const(char)* id;
     const(char)* localisationKey;
@@ -145,7 +155,7 @@ extern(C) struct WcCocoaRibbonCommand
     uint flags;
 }
 
-extern(C) struct WcCocoaRibbonSnapshot
+struct WcCocoaRibbonSnapshot
 {
     const(char)* sectionId;
     const(WcCocoaRibbonTab)* tabs;
@@ -165,12 +175,22 @@ extern(C) alias WcCocoaCsysRowsFn = size_t function(void*, WcCocoaCsysRow*, size
 extern(C) alias WcCocoaSectionEntriesFn = const(WcCocoaSectionEntry)* function(void*, size_t*) nothrow @nogc;
 extern(C) alias WcCocoaActiveRibbonFn = const(WcCocoaRibbonSnapshot)* function(void*) nothrow @nogc;
 extern(C) alias WcCocoaRibbonTemplateFn = const(char)* function(void*, const(char)*) nothrow @nogc;
+extern(C) alias WcCocoaFeatureDialogueFn = const(FeatureDialogueDescriptorV1)* function(void*, const(char)*) nothrow @nogc;
+extern(C) alias WcCocoaFeatureDialogueForFeatureFn = const(FeatureDialogueDescriptorV1)* function(void*, uint) nothrow @nogc;
+extern(C) alias WcCocoaFeatureDialogueValueFn = int function(void*, uint, const(FeatureDialogueDescriptorV1)*, size_t, char*, size_t) nothrow @nogc;
+extern(C) alias WcCocoaFeatureDialogueAcceptSelectionFn = int function(void*, const(FeatureDialogueDescriptorV1)*, size_t, uint) nothrow @nogc;
+extern(C) alias WcCocoaBeginNewSketchFn = int function(void*, const(WcCocoaSketchSupport)*, uint*, const(char)**) nothrow @nogc;
+extern(C) alias WcCocoaEditSketchFn = int function(void*, uint, const(char)**) nothrow @nogc;
+extern(C) alias WcCocoaFinishSketchFn = int function(void*, uint) nothrow @nogc;
 extern(C) alias WcCocoaSketchGeometryRowsFn = size_t function(void*, uint, WcCocoaSketchGeometryRow*, size_t) nothrow @nogc;
 extern(C) alias WcCocoaPlanarFaceRowsFn = size_t function(void*, WcCocoaPlanarFaceRow*, size_t) nothrow @nogc;
+extern(C) alias WcCocoaSketchAddLineFn = int function(void*, uint, double, double, double, double, uint, uint, uint, uint) nothrow @nogc;
+extern(C) alias WcCocoaSketchAddCircleFn = int function(void*, uint, double, double, double) nothrow @nogc;
+extern(C) alias WcCocoaSketchAddRectangleFn = int function(void*, uint, double, double, double, double) nothrow @nogc;
 extern(C) alias WcCocoaFeatureActionFn = int function(void*, uint, int) nothrow @nogc;
 extern(C) alias WcCocoaFeatureReorderFn = int function(void*, uint, uint, int) nothrow @nogc;
 
-extern(C) struct WcCocoaCallbacks
+struct WcCocoaCallbacks
 {
     WcCocoaSubmitCommandFn submitCommand;
     WcCocoaChooseSectionFn chooseSection;
@@ -183,14 +203,21 @@ extern(C) struct WcCocoaCallbacks
     WcCocoaSectionEntriesFn sectionEntries;
     WcCocoaActiveRibbonFn activeRibbon;
     WcCocoaRibbonTemplateFn ribbonTemplate;
+    WcCocoaFeatureDialogueFn featureDialogue;
+    WcCocoaFeatureDialogueForFeatureFn featureDialogueForFeature;
+    WcCocoaFeatureDialogueValueFn featureDialogueValue;
+    WcCocoaFeatureDialogueAcceptSelectionFn featureDialogueAcceptSelection;
+    WcCocoaBeginNewSketchFn beginNewSketch;
+    WcCocoaEditSketchFn editSketch;
+    WcCocoaFinishSketchFn finishSketch;
     WcCocoaSketchGeometryRowsFn sketchGeometryRows;
     WcCocoaPlanarFaceRowsFn planarFaceRows;
+    WcCocoaSketchAddLineFn sketchAddLine;
+    WcCocoaSketchAddCircleFn sketchAddCircle;
+    WcCocoaSketchAddRectangleFn sketchAddRectangle;
     WcCocoaFeatureActionFn featureAction;
     WcCocoaFeatureReorderFn featureReorder;
 }
-
-extern(C) int wc_cocoa_native_available() nothrow @nogc;
-extern(C) int wc_cocoa_run(const WcCocoaWindowConfig*, const WcCocoaCallbacks*, void*) nothrow @nogc;
 
 struct CocoaFrontendContext
 {
@@ -200,31 +227,15 @@ struct CocoaFrontendContext
     CommandConsoleState* commandConsole;
 }
 
-// Descriptor for the front-end registry.
-GuiFrontendV1 cocoaDescriptor() nothrow @nogc
-{
-    GuiFrontendV1 result;
-    result.abiVersion = WC_GUI_FRONTEND_ABI_V1;
-    result.id = "cocoa".ptr;
-    result.displayName = "Cocoa / AppKit".ptr;
-    return result;
-}
-
-bool cocoaNativeAvailable() nothrow @nogc
-{
-    return wc_cocoa_native_available() != 0;
-}
-
-private int submitGenerated(CocoaFrontendContext* context, char* command) nothrow @nogc
-{
-    if (context is null || context.commandConsole is null || context.script is null || command is null)
-        return 10;
-    return context.commandConsole.submit(context.script, command);
-}
+extern(C) int wc_cocoa_native_available() nothrow @nogc;
+extern(C) int wc_cocoa_run(const WcCocoaWindowConfig*, const WcCocoaCallbacks*, void*) nothrow @nogc;
 
 private extern(C) int cocoaSubmitCommand(void* opaque, char* command) nothrow @nogc
 {
-    return submitGenerated(cast(CocoaFrontendContext*)opaque, command);
+    auto context = cast(CocoaFrontendContext*)opaque;
+    if (context is null || context.commandConsole is null || context.script is null)
+        return 10;
+    return context.commandConsole.submit(context.script, command);
 }
 
 private extern(C) int cocoaChooseSection(void* opaque, const(char)* sectionId) nothrow @nogc
@@ -358,8 +369,6 @@ private bool navigatorShowsFeature(FeatureKind kind) nothrow @nogc
            kind != FeatureKind.sketchPolygon && kind != FeatureKind.sketchText;
 }
 
-/* Mirrors the GTK4 graphics display policy: bodies and body-producing
-   operations are viewport-displayable; sketches/datums/annotations are not. */
 private bool graphicsShowsBody(FeatureKind kind) nothrow @nogc
 {
     switch (kind)
@@ -508,30 +517,213 @@ private extern(C) size_t cocoaCsysRows(void* opaque, WcCocoaCsysRow* rows, size_
     return visible;
 }
 
-private extern(C) const(WcCocoaSectionEntry)* cocoaSectionEntries(void* opaque, size_t* count) nothrow @nogc
+private bool makeUniqueFeatureName(Model* model, const(char)* stem, char* output, size_t capacity) nothrow @nogc
 {
-    auto context = cast(CocoaFrontendContext*)opaque;
-    if (context is null || context.ribbonHost is null)
+    if (model is null || stem is null || output is null || capacity < 4)
+        return false;
+    foreach (index; 1u .. 100000u)
     {
-        if (count !is null) *count = 0;
-        return null;
+        snprintf(output, capacity, "%s%u", stem, index);
+        if (model.findFeature(output) == 0)
+            return true;
     }
-    SectionDescriptorV1* entries = context.ribbonHost.sectionLauncherEntries(count);
-    return cast(const(WcCocoaSectionEntry)*)entries;
+    return false;
 }
 
-private extern(C) const(WcCocoaRibbonSnapshot)* cocoaActiveRibbon(void* opaque) nothrow @nogc
+private bool makeUniqueConstraintName(Model* model, const(char)* stem, char* output, size_t capacity) nothrow @nogc
+{
+    if (model is null || stem is null || output is null || capacity < 4)
+        return false;
+    foreach (index; 1u .. 100000u)
+    {
+        snprintf(output, capacity, "%s%u", stem, index);
+        bool exists = false;
+        foreach (i; 0 .. model.sketchConstraintCount)
+        {
+            if (model.sketchConstraints[i].name.equals(output))
+            {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists)
+            return true;
+    }
+    return false;
+}
+
+private int submitGenerated(CocoaFrontendContext* context, char* command) nothrow @nogc
+{
+    if (context is null || context.commandConsole is null || context.script is null || command is null)
+        return 10;
+    return context.commandConsole.submit(context.script, command);
+}
+
+private bool unsigned64Text(ulong value, char* output, size_t capacity) nothrow @nogc
+{
+    if (output is null || capacity < 2 || value == 0) return false;
+    char[32] reversed;
+    size_t count = 0;
+    while (value != 0 && count < reversed.length)
+    {
+        reversed[count++] = cast(char)('0' + value % 10UL);
+        value /= 10UL;
+    }
+    if (count + 1 > capacity) return false;
+    foreach (i; 0 .. count) output[i] = reversed[count - 1 - i];
+    output[count] = 0;
+    return true;
+}
+
+private extern(C) const(FeatureDialogueDescriptorV1)* cocoaFeatureDialogue(void* opaque, const(char)* commandId) nothrow @nogc
+{
+    return featureDialogueForCommand(commandId);
+}
+
+private extern(C) const(FeatureDialogueDescriptorV1)* cocoaFeatureDialogueForFeature(void* opaque, uint featureId) nothrow @nogc
 {
     auto context = cast(CocoaFrontendContext*)opaque;
-    if (context is null || context.ribbonHost is null)
+    if (context is null || context.model is null)
         return null;
-    const(SectionRibbonV1)* ribbon = context.ribbonHost.contextualRibbon();
-    return cast(const(WcCocoaRibbonSnapshot)*)ribbon;
+    return featureDialogueForFeature(context.model.featureById(featureId));
 }
 
-private extern(C) const(char)* cocoaRibbonTemplate(void* opaque, const(char)* commandId) nothrow @nogc
+private extern(C) int cocoaFeatureDialogueValue(void* opaque, uint featureId,
+                                                const(FeatureDialogueDescriptorV1)* descriptor,
+                                                size_t fieldIndex, char* output,
+                                                size_t capacity) nothrow @nogc
 {
-    return ribbonCommandTemplate(commandId);
+    auto context = cast(CocoaFrontendContext*)opaque;
+    if (context is null || context.model is null || descriptor is null ||
+        output is null || capacity == 0 || fieldIndex >= descriptor.fieldCount)
+        return 10;
+    output[0] = 0;
+    auto feature = context.model.featureById(featureId);
+    if (feature is null)
+        return 11;
+    auto field = &descriptor.fields[fieldIndex];
+    final switch (cast(FeatureDialogueFieldSource)field.source)
+    {
+        case FeatureDialogueFieldSource.none:
+            if (field.defaultValue !is null)
+                snprintf(output, capacity, "%s", field.defaultValue);
+            return 0;
+        case FeatureDialogueFieldSource.featureName:
+            snprintf(output, capacity, "%s", feature.name.ptr());
+            return 0;
+        case FeatureDialogueFieldSource.payload:
+            snprintf(output, capacity, "%s", feature.payload.ptr());
+            return 0;
+        case FeatureDialogueFieldSource.payload2:
+            snprintf(output, capacity, "%s", feature.payload2.ptr());
+            return 0;
+        case FeatureDialogueFieldSource.operand:
+            if (field.sourceIndex >= feature.operandCount)
+                return 12;
+            auto operand = &feature.operands[field.sourceIndex];
+            final switch (operand.kind)
+            {
+                case OperandKind.literal:
+                    snprintf(output, capacity, "%.12g", operand.literal);
+                    return 0;
+                case OperandKind.parameter:
+                    auto parameter = context.model.parameterById(operand.parameterId);
+                    if (parameter is null) return 13;
+                    // Value fields are emitted as raw Ruby-like SCL, so keep
+                    // parameter operands explicit symbols rather than turning
+                    // them into an unrelated script-runtime identifier.
+                    snprintf(output, capacity, ":%s", parameter.name.ptr());
+                    return 0;
+                case OperandKind.feature:
+                    auto source = context.model.featureById(operand.featureId);
+                    if (source is null) return 14;
+                    snprintf(output, capacity, "%s", source.name.ptr());
+                    return 0;
+            }
+    }
+}
+
+private extern(C) int cocoaFeatureDialogueAcceptSelection(void* opaque,
+                                                        const(FeatureDialogueDescriptorV1)* descriptor,
+                                                        size_t fieldIndex, uint featureId) nothrow @nogc
+{
+    auto context = cast(CocoaFrontendContext*)opaque;
+    if (context is null || context.model is null)
+        return 0;
+    return featureDialogueAcceptsSelection(context.model, descriptor, fieldIndex, featureId) ? 1 : 0;
+}
+
+private extern(C) int cocoaBeginNewSketch(void* opaque, const(WcCocoaSketchSupport)* support, uint* sketchId, const(char)** sketchName) nothrow @nogc
+{
+    auto context = cast(CocoaFrontendContext*)opaque;
+    if (context is null || context.model is null || support is null || sketchId is null || sketchName is null)
+        return 10;
+    char[64] name;
+    if (!makeUniqueFeatureName(context.model, "sketch".ptr, name.ptr, name.length))
+        return 11;
+
+    char[512] command;
+    auto kind = cast(WcCocoaSketchSupportKind)support.kind;
+    if (kind == WcCocoaSketchSupportKind.datumPlane)
+    {
+        auto feature = context.model.featureById(support.featureId);
+        if (feature is null || feature.kind != FeatureKind.datumPlane) return 15;
+        snprintf(command.ptr, command.length, "sketch(:%s, :%s)", name.ptr, feature.name.ptr());
+    }
+    else if (kind == WcCocoaSketchSupportKind.csysPlane)
+    {
+        auto feature = context.model.featureById(support.featureId);
+        if (feature is null || feature.kind != FeatureKind.datumCsys || support.csysPlane is null) return 16;
+        snprintf(command.ptr, command.length, "sketch(:%s, :%s, :%s)",
+                 name.ptr, feature.name.ptr(), support.csysPlane);
+    }
+    else if (kind == WcCocoaSketchSupportKind.planarFace)
+    {
+        auto owner = context.model.featureById(support.featureId);
+        if (owner is null || support.facePersistentId == 0) return 18;
+        char[32] persistentText;
+        if (!unsigned64Text(support.facePersistentId, persistentText.ptr, persistentText.length)) return 19;
+        snprintf(command.ptr, command.length, "sketch(:%s, :%s, :face, %s)",
+                 name.ptr, owner.name.ptr(), persistentText.ptr);
+    }
+    else
+        return 21;
+
+    auto result = submitGenerated(context, command.ptr);
+    if (result != 0)
+        return result;
+    auto id = context.model.findFeature(name.ptr);
+    auto feature = context.model.featureById(id);
+    if (feature is null || feature.kind != FeatureKind.sketch)
+        return 12;
+    *sketchId = id;
+    *sketchName = feature.name.ptr();
+    return 0;
+}
+
+private extern(C) int cocoaEditSketch(void* opaque, uint sketchId, const(char)** sketchName) nothrow @nogc
+{
+    auto context = cast(CocoaFrontendContext*)opaque;
+    if (context is null || context.model is null || sketchName is null)
+        return 10;
+    auto feature = context.model.featureById(sketchId);
+    if (feature is null || feature.kind != FeatureKind.sketch)
+        return 13;
+    *sketchName = feature.name.ptr();
+    return 0;
+}
+
+private extern(C) int cocoaFinishSketch(void* opaque, uint sketchId) nothrow @nogc
+{
+    auto context = cast(CocoaFrontendContext*)opaque;
+    if (context is null || context.model is null)
+        return 10;
+    auto feature = context.model.featureById(sketchId);
+    if (feature is null || feature.kind != FeatureKind.sketch)
+        return 13;
+    char[128] command;
+    snprintf(command.ptr, command.length, "end_sketch(:%s)", feature.name.ptr());
+    return submitGenerated(context, command.ptr);
 }
 
 private extern(C) size_t cocoaSketchGeometryRows(void* opaque, uint sketchId, WcCocoaSketchGeometryRow* rows, size_t capacity) nothrow @nogc
@@ -666,6 +858,70 @@ private extern(C) size_t cocoaPlanarFaceRows(void* opaque, WcCocoaPlanarFaceRow*
     return count;
 }
 
+private int submitSketchGeometry(CocoaFrontendContext* context, uint sketchId, const(char)* suffix, const(char)* format,
+                                 double a, double b, double c, double d) nothrow @nogc
+{
+    if (context is null || context.model is null)
+        return 10;
+    auto sketch = context.model.featureById(sketchId);
+    if (sketch is null || sketch.kind != FeatureKind.sketch)
+        return 13;
+    char[64] stem;
+    snprintf(stem.ptr, stem.length, "%s_%s", sketch.name.ptr(), suffix);
+    char[64] name;
+    if (!makeUniqueFeatureName(context.model, stem.ptr, name.ptr, name.length))
+        return 14;
+    char[384] command;
+    snprintf(command.ptr, command.length, format, name.ptr, sketch.name.ptr(), a, b, c, d);
+    return submitGenerated(context, command.ptr);
+}
+
+private extern(C) int cocoaSketchAddLine(void* opaque, uint sketchId, double x1, double y1, double x2, double y2,
+                                          uint firstSnapFeature, uint firstSnapPoint,
+                                          uint secondSnapFeature, uint secondSnapPoint) nothrow @nogc
+{
+    auto context = cast(CocoaFrontendContext*)opaque;
+    if (context is null || context.model is null) return 10;
+    auto sketch = context.model.featureById(sketchId);
+    if (sketch is null || sketch.kind != FeatureKind.sketch) return 13;
+    char[64] stem; snprintf(stem.ptr, stem.length, "%s_line", sketch.name.ptr());
+    char[64] name; if (!makeUniqueFeatureName(context.model, stem.ptr, name.ptr, name.length)) return 14;
+    char[384] command;
+    snprintf(command.ptr, command.length, "sketch_line(:%s, :%s, %.6f.mm, %.6f.mm, %.6f.mm, %.6f.mm)",
+             name.ptr, sketch.name.ptr(), x1, y1, x2, y2);
+    auto result = submitGenerated(context, command.ptr);
+    if (result != 0) return result;
+
+    uint[2] snapFeatures = [firstSnapFeature, secondSnapFeature];
+    uint[2] snapPoints = [firstSnapPoint, secondSnapPoint];
+    foreach (newPoint; 0u .. 2u)
+    {
+        if (snapFeatures[newPoint] == 0) continue;
+        auto existing = context.model.featureById(snapFeatures[newPoint]);
+        if (existing is null || existing.kind != FeatureKind.sketchLine) continue;
+        char[64] constraintName;
+        if (!makeUniqueConstraintName(context.model, "snap".ptr, constraintName.ptr, constraintName.length)) return 22;
+        snprintf(command.ptr, command.length,
+                 "sketch_constraint(:coincident, :%s, :%s, :%s, %u, :%s, %u)",
+                 constraintName.ptr, sketch.name.ptr(), name.ptr, newPoint, existing.name.ptr(), snapPoints[newPoint]);
+        result = submitGenerated(context, command.ptr);
+        if (result != 0) return result;
+    }
+    return 0;
+}
+
+private extern(C) int cocoaSketchAddCircle(void* opaque, uint sketchId, double cx, double cy, double radius) nothrow @nogc
+{
+    return submitSketchGeometry(cast(CocoaFrontendContext*)opaque, sketchId, "circle".ptr,
+        "sketch_circle_at(:%s, :%s, %.6f.mm, %.6f.mm, %.6f.mm)".ptr, cx, cy, radius, 0.0);
+}
+
+private extern(C) int cocoaSketchAddRectangle(void* opaque, uint sketchId, double x, double y, double width, double height) nothrow @nogc
+{
+    return submitSketchGeometry(cast(CocoaFrontendContext*)opaque, sketchId, "rect".ptr,
+        "sketch_rect_at(:%s, :%s, %.6f.mm, %.6f.mm, %.6f.mm, %.6f.mm)".ptr, x, y, width, height);
+}
+
 private extern(C) int cocoaFeatureAction(void* opaque, uint featureId, int action) nothrow @nogc
 {
     auto context = cast(CocoaFrontendContext*)opaque;
@@ -696,18 +952,49 @@ private extern(C) int cocoaFeatureReorder(void* opaque, uint featureId, uint tar
     return submitGenerated(context, command.ptr);
 }
 
+private extern(C) const(WcCocoaSectionEntry)* cocoaSectionEntries(void* opaque, size_t* count) nothrow @nogc
+{
+    auto context = cast(CocoaFrontendContext*)opaque;
+    if (context is null || context.ribbonHost is null)
+    {
+        if (count !is null) *count = 0;
+        return null;
+    }
+    SectionDescriptorV1* entries = context.ribbonHost.sectionLauncherEntries(count);
+    return cast(const(WcCocoaSectionEntry)*)entries;
+}
+
+private extern(C) const(WcCocoaRibbonSnapshot)* cocoaActiveRibbon(void* opaque) nothrow @nogc
+{
+    auto context = cast(CocoaFrontendContext*)opaque;
+    if (context is null || context.ribbonHost is null)
+        return null;
+    const(SectionRibbonV1)* ribbon = context.ribbonHost.contextualRibbon();
+    return cast(const(WcCocoaRibbonSnapshot)*)ribbon;
+}
+
+private extern(C) const(char)* cocoaRibbonTemplate(void* opaque, const(char)* commandId) nothrow @nogc
+{
+    return ribbonCommandTemplate(commandId);
+}
+
+bool cocoaNativeAvailable() nothrow @nogc
+{
+    return wc_cocoa_native_available() != 0;
+}
+
 int runCocoaNative(Model* model,
-                   ScriptContext* script,
-                   RibbonHostState* ribbonHost,
-                   CommandConsoleState* commandConsole,
-                   int width,
-                   int height,
-                   const(char)* title,
-                   const(char)* themeId,
-                   const(char)* navigatorBackground,
-                   const(char)* navigatorRailBackground,
-                   const(char)* rendererHint,
-                   bool forceSoftwareVulkan) nothrow @nogc
+                  ScriptContext* script,
+                  RibbonHostState* ribbonHost,
+                  CommandConsoleState* commandConsole,
+                  int width,
+                  int height,
+                  const(char)* title,
+                  const(char)* themeId,
+                  const(char)* navigatorBackground,
+                  const(char)* navigatorRailBackground,
+                  const(char)* rendererHint,
+                  bool forceSoftwareVulkan) nothrow @nogc
 {
     if (model is null || script is null || ribbonHost is null || commandConsole is null)
         return 10;
@@ -740,10 +1027,29 @@ int runCocoaNative(Model* model,
     callbacks.sectionEntries = &cocoaSectionEntries;
     callbacks.activeRibbon = &cocoaActiveRibbon;
     callbacks.ribbonTemplate = &cocoaRibbonTemplate;
+    callbacks.featureDialogue = &cocoaFeatureDialogue;
+    callbacks.featureDialogueForFeature = &cocoaFeatureDialogueForFeature;
+    callbacks.featureDialogueValue = &cocoaFeatureDialogueValue;
+    callbacks.featureDialogueAcceptSelection = &cocoaFeatureDialogueAcceptSelection;
+    callbacks.beginNewSketch = &cocoaBeginNewSketch;
+    callbacks.editSketch = &cocoaEditSketch;
+    callbacks.finishSketch = &cocoaFinishSketch;
     callbacks.sketchGeometryRows = &cocoaSketchGeometryRows;
     callbacks.planarFaceRows = &cocoaPlanarFaceRows;
+    callbacks.sketchAddLine = &cocoaSketchAddLine;
+    callbacks.sketchAddCircle = &cocoaSketchAddCircle;
+    callbacks.sketchAddRectangle = &cocoaSketchAddRectangle;
     callbacks.featureAction = &cocoaFeatureAction;
     callbacks.featureReorder = &cocoaFeatureReorder;
-
     return wc_cocoa_run(&config, &callbacks, &context);
 }
+
+GuiFrontendV1 cocoaDescriptor() nothrow @nogc
+{
+    GuiFrontendV1 result;
+    result.abiVersion = WC_GUI_FRONTEND_ABI_V1;
+    result.id = "cocoa".ptr;
+    result.displayName = "Cocoa / AppKit".ptr;
+    return result;
+}
+

@@ -146,3 +146,11 @@ Qt6, GTK3, Motif and Xlib remain future front-end work. OpenGL legacy rendering 
 ## Feature dialogues
 
 See `docs/FEATURE_DIALOGUES.md` for direct ribbon invocation, editable history and the descriptor ABI.
+
+
+### Bootstrap body-bounds diagnostics
+
+The native GTK4 and Cocoa front-ends keep the old body-bounds renderer only as a diagnostic overlay. It is disabled by default so approximate display bounds are not mistaken for CAD geometry. Set `WC_SHOW_BODY_BOUNDS=1` to enable it temporarily. Selected-body bounds remain available for selection feedback.
+
+
+Sketch support is part of the Sketch feature itself. GUI-created CSYS/face sketches do not create `sketch_support*` datum-plane history entries; the sketch directly carries the CSYS-plane or persistent planar-face association.

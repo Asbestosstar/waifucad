@@ -45,7 +45,7 @@ SectionDescriptorV1 pmiSectionDescriptor() nothrow @nogc
     result.abiVersion = WC_SECTION_ABI_V1;
     result.id = "pmi".ptr;
     result.localisationKey = "section.pmi".ptr;
-    result.iconName = "section_pmi".ptr;
+    result.iconName = "tab_pmi".ptr;
     result.capabilities = cast(uint)(SectionCapability.documentRead | SectionCapability.documentWrite | SectionCapability.viewport | SectionCapability.annotation);
     return result;
 }
@@ -54,6 +54,7 @@ const(SectionRibbonV1)* pmiSectionRibbon() nothrow @nogc
 {
     return &pmiRibbon;
 }
+
 
 
 

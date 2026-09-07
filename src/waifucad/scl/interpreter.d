@@ -1522,6 +1522,40 @@ private int executeTokens(ScriptContext* context, Tokens* tokens, const(char)* o
     if (strcmp(command, "sketch".ptr) == 0)
     {
         if (tokens.count < 3) return 30;
+
+        /* Direct CSYS-plane support: sketch NAME CSYS XY|YZ|XZ.
+           The sketch depends on the CSYS directly; no sketch_support datum is
+           inserted into modelling history. */
+        if (tokens.count == 4)
+        {
+            bool ok = false;
+            auto support = parseFeatureOperand(context, tokens.values[2], &ok);
+            if (!ok) return 31;
+            auto feature = context.model.featureById(support.featureId);
+            if (feature is null || feature.kind != FeatureKind.datumCsys) return 31;
+            auto plane = tokens.values[3];
+            if (strcmp(plane, "XY".ptr) != 0 && strcmp(plane, "YZ".ptr) != 0 && strcmp(plane, "XZ".ptr) != 0 &&
+                strcmp(plane, "xy".ptr) != 0 && strcmp(plane, "yz".ptr) != 0 && strcmp(plane, "xz".ptr) != 0) return 31;
+            return context.model.addFeatureWithPayload(resolveObjectName(context, tokens.values[1]),
+                FeatureKind.sketch, &support, 1, plane) == 0 ? 31 : 0;
+        }
+
+        /* Direct exact planar-face support: sketch NAME OWNER face PERSISTENT_ID. */
+        if (tokens.count == 5 && strcmp(tokens.values[3], "face".ptr) == 0)
+        {
+            bool ok = false;
+            auto support = parseFeatureOperand(context, tokens.values[2], &ok);
+            if (!ok) return 31;
+            ulong persistentId = 0;
+            if (!parseUnsigned64(tokens.values[4], &persistentId) ||
+                persistentTopologyOwner(persistentId) != support.featureId) return 31;
+            auto face = faceByPersistentId(&context.model.exactGeometry, persistentId);
+            if (face is null || face.surfaceKind != BRepSurfaceKind.plane) return 31;
+            return context.model.addFeatureWithPayload(resolveObjectName(context, tokens.values[1]),
+                FeatureKind.sketch, &support, 1, "face".ptr, tokens.values[4]) == 0 ? 31 : 0;
+        }
+
+        if (tokens.count != 3) return 30;
         auto supportName = resolveObjectName(context,tokens.values[2]);
         auto supportId = context.model.findFeature(supportName);
         if (supportId != 0)
@@ -2303,6 +2337,7 @@ int executeUseFile(ScriptContext* context, const(char)* path) nothrow @nogc
     fclose(stream);
     return result;
 }
+
 
 
 

@@ -6,6 +6,10 @@ dialogues = (root / 'src/waifucad/gui/feature_dialogues.d').read_text()
 frontend = (root / 'src/waifucad/gui/frontends/gtk4/frontend.d').read_text()
 native = (root / 'native/gui/gtk4/wc_gtk4.c').read_text()
 header = (root / 'native/gui/gtk4/wc_gtk4.h').read_text()
+shared_header = (root / 'native/gui/shared/wc_feature_dialogue.h').read_text()
+cocoa_header = (root / 'native/gui/cocoa/wc_cocoa.h').read_text()
+cocoa_frontend = (root / 'src/waifucad/gui/frontends/cocoa/frontend.d').read_text()
+cocoa_native = (root / 'native/gui/cocoa/wc_cocoa.m').read_text()
 model = (root / 'src/waifucad/kernel/model.d').read_text()
 interpreter = (root / 'src/waifucad/scl/interpreter.d').read_text()
 pmi = (root / 'src/waifucad/sections/pmi/section.d').read_text()
@@ -30,12 +34,14 @@ for token in [
     'featureDialogueAcceptsSelection', 'FeatureScript', 'waifus/nightcore.png'
 ]:
     assert token in dialogues
-for token in [
-    'WcFeatureDialogueDescriptorV1', 'WcGtk4FeatureDialogueFn',
-    'WcGtk4FeatureDialogueForFeatureFn', 'WcGtk4FeatureDialogueValueFn',
-    'WcGtk4FeatureDialogueAcceptSelectionFn', 'selection_kind'
-]:
+for token in ['WcFeatureDialogueDescriptorV1', 'WcFeatureDialogueFieldDescriptorV1',
+              'WcFeatureDialogueSelectionKind', 'selection_kind']:
+    assert token in shared_header
+for token in ['WcGtk4FeatureDialogueFn', 'WcGtk4FeatureDialogueForFeatureFn',
+              'WcGtk4FeatureDialogueValueFn', 'WcGtk4FeatureDialogueAcceptSelectionFn']:
     assert token in header
+assert '#include "../shared/wc_feature_dialogue.h"' in header
+assert '#include "../shared/wc_feature_dialogue.h"' in cocoa_header
 for token in [
     'gtk4FeatureDialogue', 'gtk4FeatureDialogueForFeature',
     'gtk4FeatureDialogueValue', 'gtk4FeatureDialogueAcceptSelection'
@@ -48,6 +54,16 @@ for token in [
     'feature_dialogue_accept_pick', 'hit_test_sketch', 'Select…'
 ]:
     assert token in native
+
+for token in ['WcCocoaFeatureDialogueFn', 'WcCocoaFeatureDialogueForFeatureFn',
+              'WcCocoaFeatureDialogueValueFn', 'WcCocoaFeatureDialogueAcceptSelectionFn']:
+    assert token in cocoa_header
+for token in ['cocoaFeatureDialogue', 'cocoaFeatureDialogueForFeature',
+              'cocoaFeatureDialogueValue', 'cocoaFeatureDialogueAcceptSelection']:
+    assert token in cocoa_frontend
+for token in ['featureDialogueApply:', 'showFeatureDialogue:', 'featureDialogueSelect:',
+              'acceptFeaturePick:', 'WcHitTestSketch', 'Select…', 'Edit Sketch Geometry']:
+    assert token in cocoa_native
 
 # Every built-in dialogue has a distinct waifu assignment rather than sharing
 # the fallback image. The fallback remains available for future templates.
@@ -126,3 +142,4 @@ assert 'Feature dialogue failed:' in native
 assert 'SCL command failed (%d): %s' in command_console
 assert 'Model recompute failed after command (%d): %s' in command_console
 print('Feature-dialogue static contract passed.')
+

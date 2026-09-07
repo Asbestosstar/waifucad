@@ -185,6 +185,7 @@ struct WcGtk4State {
     int window_width_hint;
     int ribbon_density;
     int journal_recording;
+    int show_body_bounds;
     int fit_bounds_valid;
     double fit_min_x;
     double fit_min_y;
@@ -886,6 +887,39 @@ static int fit_feature(WcGtk4State *state, uint32_t feature_id)
     state->pan_y = 0.0;
     gtk_widget_queue_draw(state->drawing_area);
     return 1;
+}
+
+static void draw_planar_body_faces(cairo_t *cr, int width, int height, WcGtk4State *state)
+{
+    WcGtk4PlanarFaceRow faces[WC_FACE_ROW_CAPACITY];
+    WcGtk4ModelSnapshot snapshot;
+    WcViewTransform transform;
+    size_t count = 0, i;
+    if (state == NULL || state->callbacks == NULL || state->callbacks->planar_face_rows == NULL)
+        return;
+    get_snapshot(state, &snapshot);
+    transform = make_view_transform(state, width, height, &snapshot);
+    if (!transform.valid) return;
+    count = state->callbacks->planar_face_rows(state->user_data, faces, WC_FACE_ROW_CAPACITY);
+    if (count > WC_FACE_ROW_CAPACITY) count = WC_FACE_ROW_CAPACITY;
+    for (i = 0; i < count; ++i) {
+        uint32_t p;
+        if (faces[i].point_count < 3 || faces[i].point_count > WC_GTK4_FACE_MAX_POINTS) continue;
+        for (p = 0; p < faces[i].point_count; ++p) {
+            double sx, sy;
+            model_to_screen(state, &transform,
+                faces[i].points[p * 3], faces[i].points[p * 3 + 1], faces[i].points[p * 3 + 2], &sx, &sy);
+            if (p == 0) cairo_move_to(cr, sx, sy); else cairo_line_to(cr, sx, sy);
+        }
+        cairo_close_path(cr);
+        /* Default bootstrap display uses real exact planar B-rep faces.
+           Feature bounds remain an opt-in diagnostic overlay. */
+        set_source_rgba(cr, 0.72, 0.50, 0.88, 0.10);
+        cairo_fill_preserve(cr);
+        cairo_set_line_width(cr, 1.25);
+        set_source_rgba(cr, 0.96, 0.72, 0.92, 0.72);
+        cairo_stroke(cr);
+    }
 }
 
 static void draw_planar_face_selection(cairo_t *cr, int width, int height, WcGtk4State *state)
@@ -1890,7 +1924,9 @@ static void draw_cb(GtkDrawingArea *area, cairo_t *cr, int width, int height, gp
 
     draw_grid(cr, width, height, state);
     get_snapshot(state, &snapshot);
-    draw_body_bounds(cr, width, height, state, &snapshot);
+    if (state->show_body_bounds)
+        draw_body_bounds(cr, width, height, state, &snapshot);
+    draw_planar_body_faces(cr, width, height, state);
     draw_all_sketches_3d(cr, width, height, state, &snapshot);
     draw_planar_face_selection(cr, width, height, state);
     draw_selected_body_bounds(cr, width, height, state);
@@ -4362,6 +4398,10 @@ int wc_gtk4_run(const WcGtk4WindowConfig *config,
     state.sketch_tool = WC_SKETCH_TOOL_LINE;
     state.window_width_hint = config->width;
     state.ribbon_density = config->width < 820 ? 2 : (config->width < 1180 ? 1 : 0);
+    {
+        const char *show_bounds = g_getenv("WC_SHOW_BODY_BOUNDS");
+        state.show_body_bounds = show_bounds != NULL && show_bounds[0] != '\0' && strcmp(show_bounds, "0") != 0;
+    }
     wc_gpu_probe(&state.gpu);
 
     install_css(config);
@@ -4496,4 +4536,5 @@ int wc_gtk4_run(const WcGtk4WindowConfig *config,
     g_main_loop_unref(state.loop);
     return 0;
 }
+
 

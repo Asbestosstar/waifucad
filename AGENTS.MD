@@ -261,7 +261,8 @@
 - [x] Render the shared command console in the GTK4 native front-end while preserving the shared SCL command path; terminal prototype remains available.
 - [x] Declare Cocoa/AppKit as the native macOS front-end: macOS GUI targets build through `native/gui/cocoa` (C ABI scaffold plus stub) and never probe or link GTK4.
 - [x] Implement the Objective-C AppKit/Metal bridge `native/gui/cocoa/wc_cocoa.m` (v2, GTK4 layout/feature parity): tabbed ribbon with scrolling SVG-icon command groups, Nightcore art, Model/Assembly/AI rail with collapsible navigator (badges, CSYS-plane/planar-face child rows, context menu, drag-and-drop reordering), GTK4 draw pipeline over a Metal clear pass (grid, translucent body bounds, sketches on support frames, face hover/selection, CSYS frames, axis triad), middle-drag orbit, cursor-centred wheel zoom, WASD pan, fit menus, centred command-console overlay and status bar; every widget action stays on the shared semantic SCL/journal command path.
-- [ ] Finish Cocoa/GTK4 parity: data-driven feature dialogues, interactive sketch mode with snapping, `assets/locales/` label lookup, and the dedicated Metal WaifuBRep renderer replacing the bounds-wireframe display.
+- [x] Bring Cocoa/AppKit to GTK4 GUI workflow parity for the current bootstrap renderer: shared data-driven feature dialogues, semantic navigator/viewport picking, editable feature reopening, native file fields, interactive sketch mode with support selection/snapping/ambiguity choice, and matching sketch ribbon tools all use the same neutral descriptors and SCL/journal callbacks.
+- [ ] Finish remaining Cocoa presentation/backend work: `assets/locales/` label lookup and the dedicated Metal WaifuBRep renderer replacing the shared bounds-wireframe bootstrap display.
 - [x] Render toolkit-neutral Modelling/PMI ribbon descriptors as real GTK4 tabs/groups/buttons with project-owned SVG icons; ribbon commands now execute simple actions directly or open data-driven feature dialogues while all model mutations still use semantic SCL transactions.
 - [x] Move the Nightcore theme image to the ribbon top-right and keep the viewport/navigation area free for CAD work.
 - [x] Launch the GTK4 application with no command-line arguments; retain `--bootstrap-info` for non-interactive smoke tests and `--console` for the terminal prototype.
@@ -277,7 +278,7 @@
 - [x] Add toolkit-neutral scriptable `FeatureDialogueDescriptorV1` data with a distinct waifu assignment per built-in dialogue, direct ribbon invocation, semantic profile/body/path pick fields that can select from Model Navigator or the graphics area where that feature class is visible, atomic in-place `feature_edit` transactions that preserve EntityId, and Model Navigator double-activation reopening editable feature dialogues; Sketch containers are valid profile selections when `resolveProfile` can form one region. Keep FeatureScript as a future metadata/operation adapter rather than executing it against kernel memory.
 - [x] Keep Sketch-as-profile semantics consistent through preview and exact recompute, and expose native filesystem choosers for feature-dialogue file fields, Run Script, Record Journal and Run Journal; file actions still route through semantic SCL.
 - [x] Add a GTK4 sketch-editing mode: Sketch enters an orthographic 2D editor, double-activating a sketch history row reopens it, and line/circle/rectangle drawing from the graphics area creates journalled SCL sketch entities with live cursor preview.
-- [x] Make Sketch support explicit: create sketches only on datum planes, CSYS-derived XY/YZ/XZ planes, or exact planar B-rep faces selected from Model Navigator/viewport; face support is persisted through `datum_plane_from_face`.
+- [x] Make Sketch support explicit without manufacturing history helpers: a sketch may directly reference a datum plane, a CSYS XY/YZ/XZ plane, or an exact planar B-rep face selected from Model Navigator/viewport. GUI-created face/CSYS sketches persist that support on the Sketch feature itself; do not create `sketch_support*` datum features.
 - [x] Add sketch snapping with hover highlighting and one-second ambiguity ellipsis/chooser: line endpoints, rectangle corners, circle centres/quadrants, arc centres/endpoints, the sketch-support origin and X/Y axes are recognised; line-to-line endpoint snaps also create journalled coincident constraints.
 - [x] Keep sketch child geometry out of Model Navigator so sketch lines/arcs/circles/rectangles remain internal sketch entities rather than top-level history rows.
 - [x] Make wheel zoom cursor-centred in both sketch and 3D bootstrap views.
@@ -287,7 +288,7 @@
 - [x] Make the default 1024×768 Model Navigator compact with a visible part name, zero-width shrink support and explicit horizontal/vertical scrolling for long history labels; set the paned divider only after both children exist so GTK cannot replace the intended compact width with the navigator's natural width.
 - [x] Add P1 graphics-area body picking from feature display bounds, highlight the selected body plus its exposed planar-face children, and expose right-click Fit/Fit Selected/Properties actions.
 - [x] Render all resolvable datum CSYS frames in the 3D viewport, including the absolute part CSYS at model origin, with X/Y/Z axes plus translucent XY/YZ/XZ construction planes in addition to the view-orientation triad; construction planes remain visible/selectable in an otherwise empty part and occupy only the positive square quadrant bounded by their two positive CSYS axes rather than mirroring through the origin.
-- [x] Render sketch entities in the normal 3D viewport on their real support frames instead of drawing the union of all preview bounds as one misleading box; body bootstrap display remains per-body bounds until tessellated WaifuBRep rendering lands.
+- [x] Render sketch entities in the normal 3D viewport on their real support frames instead of drawing the union of all preview bounds as one misleading box; exact planar WaifuBRep faces are drawn by default in both GTK4 and Cocoa so exact prismatic bodies remain visible without a fake bounds cube. Generic body bounds are a diagnostic overlay disabled by default (`WC_SHOW_BODY_BOUNDS=1` enables it), while selected-body bounds remain a selection aid until full curved/tessellated rendering lands.
 - [ ] Add constraint navigator and command finder; Assembly/AI navigator data models remain partial until those Sections mature.
 - [x] Add NX-inspired GTK4 viewport navigation without copying proprietary resources: wheel zoom and middle-button drag orbit.
 - [x] Implement WASD viewport pan with focus rules: keyboard navigation is suppressed while an editable command/text field owns focus; Shift accelerates pan.
@@ -295,7 +296,7 @@
 
 ### P1 — graphics
 - [x] Add a header-free Vulkan 1.0 loader/physical-device capability probe that distinguishes hardware from software devices without making Vulkan a kernel dependency.
-- [ ] Implement the dedicated WaifuCAD Vulkan 3D renderer; the first GTK4 viewport is a Cairo/GSK bounds renderer so the CAD UI is visible before the full renderer lands.
+- [ ] Implement the dedicated WaifuCAD Vulkan 3D renderer; the current GTK4 bootstrap viewport draws exact planar B-rep face polygons plus sketch/datum geometry, with diagnostic bounds only on request, but still lacks the full curved/tessellated depth-buffered renderer.
 - [ ] Implement Metal renderer for current macOS.
 - [ ] Implement OpenGL renderer for legacy UNIX and fallback use.
 - [ ] Prefer a dedicated OpenGL GPU over software Vulkan when policy says it will be faster.
@@ -369,6 +370,8 @@
 - When a pointer field must be reassignable but its pointee is read-only, spell it `const(Type)*`; avoid prefix `const Type*` in such state fields because D qualifiers are transitive/ambiguous for this purpose.
 - If an `auto` local is derived from a const expression but will later be modified, give it an explicit mutable value type (for example `double tx = ...`).
 - Narrow feature operand counts to `ubyte` only after enforcing the fixed-capacity/range check.
+
+
 
 
 

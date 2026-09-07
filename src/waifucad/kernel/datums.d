@@ -191,7 +191,38 @@ bool sketchFrame(Model* model, EntityId sketchId, DatumFrame* result) nothrow @n
     auto sketch = model.featureById(sketchId);
     if (sketch is null || sketch.kind != FeatureKind.sketch) return false;
     if (sketch.operandCount >= 1 && sketch.operands[0].kind == OperandKind.feature)
-        return datumFeatureFrame(model, sketch.operands[0].featureId, result);
+    {
+        auto supportId = sketch.operands[0].featureId;
+        auto support = model.featureById(supportId);
+        if (support is null) return false;
+
+        /* Face-backed sketches carry the persistent face identity directly.
+           Do not manufacture a datum-plane history feature merely to host a
+           sketch: the sketch itself owns the associative support reference. */
+        if (strcmp(sketch.payload.ptr(), "face".ptr) == 0)
+            return planarFaceFrame(model, supportId, sketch.payload2.ptr(), result);
+
+        if (support.kind == FeatureKind.datumPlane)
+            return datumFeatureFrame(model, supportId, result);
+
+        /* A CSYS XY/YZ/XZ plane is likewise a direct sketch support. */
+        if (support.kind == FeatureKind.datumCsys)
+        {
+            DatumFrame parent;
+            if (!datumFeatureFrame(model, supportId, &parent)) return false;
+            if (strcmp(sketch.payload.ptr(), "XY".ptr) == 0 || strcmp(sketch.payload.ptr(), "xy".ptr) == 0)
+            {
+                *result = parent;
+                return true;
+            }
+            if (strcmp(sketch.payload.ptr(), "YZ".ptr) == 0 || strcmp(sketch.payload.ptr(), "yz".ptr) == 0)
+                return orthonormalFrame(parent.origin, parent.yAxis, parent.zAxis, result);
+            if (strcmp(sketch.payload.ptr(), "XZ".ptr) == 0 || strcmp(sketch.payload.ptr(), "xz".ptr) == 0)
+                return orthonormalFrame(parent.origin, parent.xAxis, parent.zAxis, result);
+            return false;
+        }
+        return false;
+    }
     return principalFrame(sketch.payload.ptr(), result);
 }
 
@@ -202,4 +233,5 @@ BRepVec3 framePoint(const DatumFrame* frame, double x, double y, double z = 0.0)
                     frame.origin.y + frame.xAxis.y*x + frame.yAxis.y*y + frame.zAxis.y*z,
                     frame.origin.z + frame.xAxis.z*x + frame.yAxis.z*y + frame.zAxis.z*z);
 }
+
 

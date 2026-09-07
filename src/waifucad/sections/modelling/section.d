@@ -55,7 +55,7 @@ SectionDescriptorV1 modellingSectionDescriptor() nothrow @nogc
     result.abiVersion = WC_SECTION_ABI_V1;
     result.id = "modelling".ptr;
     result.localisationKey = "section.modelling".ptr;
-    result.iconName = "section_modelling".ptr;
+    result.iconName = "tab_home".ptr;
     result.capabilities = cast(uint)(SectionCapability.modelling | SectionCapability.documentRead | SectionCapability.documentWrite | SectionCapability.viewport);
     return result;
 }
@@ -64,6 +64,7 @@ const(SectionRibbonV1)* modellingSectionRibbon() nothrow @nogc
 {
     return &modellingRibbon;
 }
+
 
 
 

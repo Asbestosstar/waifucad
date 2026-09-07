@@ -662,26 +662,20 @@ private extern(C) int gtk4BeginNewSketch(void* opaque, const(WcGtk4SketchSupport
     if (!makeUniqueFeatureName(context.model, "sketch".ptr, name.ptr, name.length))
         return 11;
 
-    const(char)* supportName = null;
-    char[64] generatedSupport;
     char[512] command;
     auto kind = cast(WcGtk4SketchSupportKind)support.kind;
     if (kind == WcGtk4SketchSupportKind.datumPlane)
     {
         auto feature = context.model.featureById(support.featureId);
         if (feature is null || feature.kind != FeatureKind.datumPlane) return 15;
-        supportName = feature.name.ptr();
+        snprintf(command.ptr, command.length, "sketch(:%s, :%s)", name.ptr, feature.name.ptr());
     }
     else if (kind == WcGtk4SketchSupportKind.csysPlane)
     {
         auto feature = context.model.featureById(support.featureId);
         if (feature is null || feature.kind != FeatureKind.datumCsys || support.csysPlane is null) return 16;
-        if (!makeUniqueFeatureName(context.model, "sketch_support".ptr, generatedSupport.ptr, generatedSupport.length)) return 17;
-        snprintf(command.ptr, command.length, "datum_plane_from_csys(:%s, :%s, :%s)",
-                 generatedSupport.ptr, feature.name.ptr(), support.csysPlane);
-        auto result = submitGenerated(context, command.ptr);
-        if (result != 0) return result;
-        supportName = generatedSupport.ptr;
+        snprintf(command.ptr, command.length, "sketch(:%s, :%s, :%s)",
+                 name.ptr, feature.name.ptr(), support.csysPlane);
     }
     else if (kind == WcGtk4SketchSupportKind.planarFace)
     {
@@ -689,17 +683,12 @@ private extern(C) int gtk4BeginNewSketch(void* opaque, const(WcGtk4SketchSupport
         if (owner is null || support.facePersistentId == 0) return 18;
         char[32] persistentText;
         if (!unsigned64Text(support.facePersistentId, persistentText.ptr, persistentText.length)) return 19;
-        if (!makeUniqueFeatureName(context.model, "sketch_support".ptr, generatedSupport.ptr, generatedSupport.length)) return 20;
-        snprintf(command.ptr, command.length, "datum_plane_from_face(:%s, :%s, %s)",
-                 generatedSupport.ptr, owner.name.ptr(), persistentText.ptr);
-        auto result = submitGenerated(context, command.ptr);
-        if (result != 0) return result;
-        supportName = generatedSupport.ptr;
+        snprintf(command.ptr, command.length, "sketch(:%s, :%s, :face, %s)",
+                 name.ptr, owner.name.ptr(), persistentText.ptr);
     }
     else
         return 21;
 
-    snprintf(command.ptr, command.length, "sketch(:%s, :%s)", name.ptr, supportName);
     auto result = submitGenerated(context, command.ptr);
     if (result != 0)
         return result;
@@ -1063,4 +1052,5 @@ GuiFrontendV1 gtk4Descriptor() nothrow @nogc
     result.displayName = "GTK4".ptr;
     return result;
 }
+
 

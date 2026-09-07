@@ -99,7 +99,7 @@ HEADER
     find src native config docs build ports sdk sections mods scripts tests examples assets/locales assets/themes assets/shaders assets/icons waifus \
         -type f 2>/dev/null | LC_ALL=C sort | while IFS= read -r f; do
         case "$f" in
-            *.d|*.c|*.h|*.sh|*.py|*.json|*.md|*.frag|*.vert|*.metal|*.glsl|*.svg|*.txt|*.wcs|*.scl|*.scad)
+            *.d|*.c|*.h|*.m|*.mm|*.sh|*.py|*.json|*.md|*.frag|*.vert|*.metal|*.glsl|*.svg|*.txt|*.wcs|*.scl|*.scad)
                 printf '\n===== BEGIN FILE: %s =====\n' "$f"
                 cat "$f"
                 printf '\n===== END FILE: %s =====\n' "$f"
@@ -115,6 +115,7 @@ HEADER
 mv "$TMP" "$OUT"
 trap - EXIT HUP INT TERM
 printf 'Wrote %s\n' "$OUT"
+
 
 
 

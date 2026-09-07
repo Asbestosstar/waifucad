@@ -2,11 +2,14 @@
 
 Generated from the current source tree by `./make_todos.sh`. Build outputs and generated AI context are excluded.
 
+.DS_Store
 .gitignore
 AGENTS.MD
 HANDOFF_PROMPT.md
 LICENSE
+PATCH_NOTES.md
 README.md
+WaifuCAD-Cocoa-GTK4-parity.patch
 assets/icons/README.md
 assets/icons/cmd_arc.svg
 assets/icons/cmd_chamfer.svg
@@ -79,8 +82,8 @@ assets/themes/nightcore_2008/background.ppm
 assets/themes/nightcore_2008/layout_1024x768.json
 assets/themes/nightcore_2008/ui_tokens.json
 build.sh
+build/.DS_Store
 build/arch/README.md
-build/arch/loongarch64-linux.sh
 build/arch/riscv64-linux.sh
 build/compiler.sh
 build/os/aix.sh
@@ -123,6 +126,7 @@ docs/PARAMETRIC_FOUNDATION.md
 docs/PORTING.md
 docs/SECTIONS.md
 docs/TARGET_MATRIX.md
+examples/.DS_Store
 examples/openscad/external_import_demo.scad
 examples/scripts/bracket.wcs
 examples/scripts/brep_box.wcs
@@ -152,10 +156,12 @@ journals/README.md
 journals/smoke.wjournal
 make_todos.sh
 mods/README.md
+native/.DS_Store
 native/files/wc_temp.h
 native/files/wc_temp_posix.c
 native/graphics/wc_gpu_probe.c
 native/graphics/wc_gpu_probe.h
+native/gui/.DS_Store
 native/gui/cocoa/README.md
 native/gui/cocoa/wc_cocoa.h
 native/gui/cocoa/wc_cocoa.m
@@ -163,6 +169,7 @@ native/gui/cocoa/wc_cocoa_stub.c
 native/gui/gtk4/wc_gtk4.c
 native/gui/gtk4/wc_gtk4.h
 native/gui/gtk4/wc_gtk4_stub.c
+native/gui/shared/wc_feature_dialogue.h
 native/threads/wc_threads.h
 native/threads/wc_threads_posix.c
 native/threads/wc_threads_single.c
@@ -231,8 +238,10 @@ ports/os/zos/build.sh
 scripts/README.md
 sdk/waifucad_mod_api.h
 sections/README.md
+src/.DS_Store
 src/apps/waifucad_batch.d
 src/apps/waifucad_gui.d
+src/waifucad/.DS_Store
 src/waifucad/ai/protocol.d
 src/waifucad/brep/README.md
 src/waifucad/brep/advanced.d
@@ -258,9 +267,11 @@ src/waifucad/graphics/backends/metal/README.md
 src/waifucad/graphics/backends/opengl/README.md
 src/waifucad/graphics/backends/vulkan/README.md
 src/waifucad/graphics/selector.d
+src/waifucad/gui/.DS_Store
 src/waifucad/gui/api.d
 src/waifucad/gui/command_console.d
 src/waifucad/gui/feature_dialogues.d
+src/waifucad/gui/frontends/.DS_Store
 src/waifucad/gui/frontends/cocoa/README.md
 src/waifucad/gui/frontends/cocoa/frontend.d
 src/waifucad/gui/frontends/gtk1/README.md
@@ -382,6 +393,7 @@ tests/model_history_edit.wcs
 tests/native_temp_files.c
 tests/native_temp_files.sh
 tests/native_threads.sh
+tests/objective_c_context_static.py
 tests/openscad_cli_probe.sh
 tests/openscad_interchange_static.py
 tests/openscad_parity.sh

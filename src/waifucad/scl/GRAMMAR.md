@@ -318,6 +318,9 @@ datum_axis_from_csys(:spin_axis, :part_csys, :Z)
 datum_csys_from(:inspection_csys, :work_plane, 10.mm, 0, 0)
 
 sketch(:profile, :work_plane)
+# A sketch may also depend directly on a CSYS plane or exact planar face; no helper datum is created:
+# sketch(:side_profile, :part_csys, :YZ)
+# sketch(:face_profile, :body, :face, 1234567890123456789)
 sketch_line(:a, :profile, 0, 0, 40, 0)
 sketch_line(:b, :profile, 40, 0, 40, 20)
 sketch_line(:c, :profile, 40, 20, 0, 20)
@@ -335,7 +338,7 @@ Expression parameters support scalar literals, named parameters, `PI`/`TAU`/`E`,
 
 Implemented persistent sketch constraint kinds are `coincident`, `horizontal`, `vertical`, `distance`, `equal_length`, `parallel`, `perpendicular`, `angle`, `midpoint`, `concentric`, `equal_radius`, `radius`, `diameter`, `tangent`, `symmetry` and `fix_point`. `tangent` currently constrains a selected line endpoint to a circle/arc and aligns the line tangent there; `symmetry` constrains the endpoints of one line segment symmetrically about a second line. The fixed-capacity projection solver reports residuals, redundant/conflicting/invalid constraints, equation counts and estimated degrees of freedom. A future general nonlinear/Jacobian solver is still required for arbitrary coupled constraint systems.
 
-Datum features are first-class model features and therefore participate in dependency depth, dirty propagation, SCL journalling and getters. Every new part begins with an `absolute_csys` at 0,0,0. `datum_plane`, `datum_axis` and `datum_csys` define absolute frames; `datum_plane_from_csys`, `datum_plane_from_face`, `datum_plane_offset`, `datum_axis_from_csys` and `datum_csys_from` create associative derived datums. `datum_plane_from_face` accepts only a persistent ID belonging to an exact planar face of the named owner feature.
+Datum features are first-class model features and therefore participate in dependency depth, dirty propagation, SCL journalling and getters. Every new part begins with an `absolute_csys` at 0,0,0. `datum_plane`, `datum_axis` and `datum_csys` define absolute frames; `datum_plane_from_csys`, `datum_plane_from_face`, `datum_plane_offset`, `datum_axis_from_csys` and `datum_csys_from` create associative derived datums. `datum_plane_from_face` accepts only a persistent ID belonging to an exact planar face of the named owner feature. A Sketch may reference a datum plane as before, or directly reference a CSYS plane / exact planar face using the extended `sketch` forms above; GUI sketch creation uses the direct forms so no `sketch_support*` datum is added to history.
 
 ## Exact P1 geometry domains
 
@@ -353,4 +356,5 @@ shell(:hollow, :axis_aligned_box, 2.mm)
 Exact extrusion accepts a single closed planar polygon/line-loop or circle region and honours a datum-plane frame. Full 360-degree polygon revolution uses analytic plane/cylinder/cone topology for line segments in a radial/axial half-plane; circles can produce exact spheres/tori in the supported axis relationship. Straight sweeps and compatible two-profile lofts are exact in their supported linear domains. Box boolean and closed-box-shell exact paths are deliberately narrow bootstrap algorithms; unsupported general cases remain `preview-only`.
 
 `get_feature_geometry_status(...)` and `get_feature_bounds_source(...)` should always be used by AI callers when exactness matters.
+
 
