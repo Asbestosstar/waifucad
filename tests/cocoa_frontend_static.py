@@ -45,19 +45,37 @@ assert 'return 78;' in native_stub and 'wc_cocoa_native_available' in native_stu
 bridge = (root / 'native/gui/cocoa/wc_cocoa.m').read_text()
 assert 'int wc_cocoa_native_available(void)' in bridge and 'return 1;' in bridge
 assert 'int wc_cocoa_run(const WcCocoaWindowConfig *config' in bridge
-for token in ['assets/icons/%s.svg', 'NSImageAbove', 'NSImageLeft',
+for token in ['assets/icons/%s.svg', 'NSImageAbove',
               'hasHorizontalScroller = YES', 'WcHumanise',
               'MTLCreateSystemDefaultDevice', 'CAMetalLayer',
-              'g_callbacks.submit_command', 'g_callbacks.run_ribbon_command',
+              'g_callbacks.submit_command', 'g_callbacks.ribbon_template',
+              'g_callbacks.feature_action', 'g_callbacks.feature_reorder',
               'initWithContentsOfFile', 'scrollToPoint', 'reflectScrolledClipView']:
     assert token in bridge, f'cocoa bridge is missing {token}'
 
-# Icon names must cross the C ABI in both directions (header <-> D extern structs).
-assert 'const char *icon;' in native_header and 'const char *tab_icon;' in native_header
-assert 'const(char)* icon;' in frontend and 'const(char)* tabIcon;' in frontend
-assert 'rows[written].icon = ribbon.commands[i].iconName;' in frontend
-assert 'rows[written].icon = entries[i].iconName;' in frontend
-assert 'ribbon.tabs[t].iconName' in frontend
+# GTK4 layout/feature parity anchors: rail, navigator pages, graphics pipeline,
+# centred command overlay, orbit/zoom/pan/hover/fit interactions, journal verbs.
+for token in ['Model Navigator', 'Assembly Navigator', 'AI Agent',
+              'nav_model', 'nav_assembly', 'nav_ai',
+              'WcProjectPoint', 'WcMakeViewTransform', 'WcHitTestBody', 'WcHitTestPlanarFace',
+              'drawBodyBoundsWithTransform', 'drawAllSketches3DWithTransform',
+              'drawPlanarFaceSelectionWithTransform', 'drawAbsoluteCsys', 'drawAxisTriad',
+              'otherMouseDown', 'scrollWheel', 'mouseMoved', 'rightMouseDown', 'keyDown',
+              'global.sections', 'global.mods', 'Sections',
+              'journal_start', 'journal_run', 'journal_stop()',
+              'NSTableViewDropOn', 'menuForEvent', 'WC_COCOA_FEATURE_KIND_SKETCH',
+              'Nightcore theme image', 'Command complete — press Esc for viewport navigation']:
+    assert token in bridge, f'cocoa bridge is missing parity anchor {token}'
+
+# Icon names cross the C ABI through the layout-compatible descriptor mirrors.
+assert 'const char *icon_name;' in native_header
+assert 'WcCocoaRibbonSnapshot' in native_header and 'WcCocoaSectionEntry' in native_header
+assert 'cast(const(WcCocoaRibbonSnapshot)*)ribbon' in frontend
+assert 'cast(const(WcCocoaSectionEntry)*)entries' in frontend
+# Semantic SCL feature actions/reorders mirror the GTK4 trampolines.
+for token in ['feature_delete', 'feature_move_up', 'feature_move_down',
+              'feature_move_after', 'feature_move_before']:
+    assert f'"{token}".ptr' in frontend, f'cocoa frontend is missing {token}'
 
 # --- GUI host selection -------------------------------------------------------
 app = (root / 'src/apps/waifucad_gui.d').read_text()
