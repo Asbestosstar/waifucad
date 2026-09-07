@@ -1,6 +1,7 @@
 module waifucad.interchange.openscad.roundtrip;
 
 import core.stdc.stdio : FILE, fopen, fclose, fgets, sscanf, snprintf;
+import core.stdc.stdlib : free, realloc;
 import core.stdc.string : strstr;
 import waifucad.kernel.model : Model;
 import waifucad.mesh.types : MeshId, MeshVec3;
@@ -55,6 +56,15 @@ int importWaifuCadDumbScad(Model* model, const(char)* path, const(char)* baseNam
     MeshId currentMesh = 0;
     uint bodyNumber = 0;
     int failure = 0;
+    /* File-ordinal -> welded local vertex index for the body being read.
+       Exact-body tessellation emits per-face corner vertices, so exported
+       round-trip channels contain positionally duplicated points. Welding
+       them here restores index-shared manifold topology on re-import and
+       gives --scad-weld its documented fuzzy-match tolerance; a zero
+       tolerance welds bitwise-identical coordinates only. */
+    uint* weldMap = null;
+    size_t weldMapCount = 0;
+    size_t weldMapCapacity = 0;
     while (fgets(line.ptr, cast(int)line.length, file) !is null)
     {
         if (strstr(line.ptr, "// wc-body-begin".ptr) == line.ptr)
@@ -64,6 +74,7 @@ int importWaifuCadDumbScad(Model* model, const(char)* path, const(char)* baseNam
             sscanf(line.ptr, "// wc-body-begin %63s", sourceName.ptr);
             currentMesh = model.dumbMeshes.beginMesh(options.preserveSourcePath ? path : null);
             if (currentMesh == 0) { failure = 4; break; }
+            weldMapCount = 0;
             continue;
         }
         if (strstr(line.ptr, "// wc-vertex".ptr) == line.ptr)
@@ -72,7 +83,37 @@ int importWaifuCadDumbScad(Model* model, const(char)* path, const(char)* baseNam
             MeshVec3 point;
             if (sscanf(line.ptr, "// wc-vertex %lf %lf %lf", &point.x, &point.y, &point.z) != 3) { failure = 6; break; }
             point.x *= options.unitScale; point.y *= options.unitScale; point.z *= options.unitScale;
-            if (!model.dumbMeshes.addVertex(currentMesh, point)) { failure = 7; break; }
+            auto mesh = model.dumbMeshes.mesh(currentMesh);
+            if (mesh is null) { failure = 7; break; }
+            uint mapped = uint.max;
+            auto toleranceSquared = options.weldTolerance * options.weldTolerance;
+            foreach (j; 0 .. mesh.vertexCount)
+            {
+                auto candidate = model.dumbMeshes.vertices[mesh.firstVertex + j];
+                auto dx = candidate.x - point.x;
+                auto dy = candidate.y - point.y;
+                auto dz = candidate.z - point.z;
+                if (dx * dx + dy * dy + dz * dz <= toleranceSquared)
+                {
+                    mapped = j;
+                    break;
+                }
+            }
+            if (mapped == uint.max)
+            {
+                uint localIndex = 0;
+                if (!model.dumbMeshes.addVertex(currentMesh, point, &localIndex)) { failure = 7; break; }
+                mapped = localIndex;
+            }
+            if (weldMapCount == weldMapCapacity)
+            {
+                auto newCapacity = weldMapCapacity == 0 ? 256 : weldMapCapacity * 2;
+                auto grown = cast(uint*)realloc(weldMap, newCapacity * uint.sizeof);
+                if (grown is null) { failure = 7; break; }
+                weldMap = grown;
+                weldMapCapacity = newCapacity;
+            }
+            weldMap[weldMapCount++] = mapped;
             continue;
         }
         if (strstr(line.ptr, "// wc-triangle".ptr) == line.ptr)
@@ -80,6 +121,8 @@ int importWaifuCadDumbScad(Model* model, const(char)* path, const(char)* baseNam
             if (currentMesh == 0) { failure = 8; break; }
             uint a, b, c;
             if (sscanf(line.ptr, "// wc-triangle %u %u %u", &a, &b, &c) != 3) { failure = 9; break; }
+            if (a >= weldMapCount || b >= weldMapCount || c >= weldMapCount) { failure = 9; break; }
+            a = weldMap[a]; b = weldMap[b]; c = weldMap[c];
             if (options.reverseWinding) { auto t = b; b = c; c = t; }
             if (options.dropDegenerateTriangles && isDegenerate(a,b,c)) continue;
             auto mesh = model.dumbMeshes.mesh(currentMesh);
@@ -112,6 +155,7 @@ int importWaifuCadDumbScad(Model* model, const(char)* path, const(char)* baseNam
         }
     }
     fclose(file);
+    free(weldMap);
     if (currentMesh != 0 && failure == 0) failure = 15;
     if (bodyNumber == 0 && failure == 0) failure = 16;
 

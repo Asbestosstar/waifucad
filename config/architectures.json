@@ -25,6 +25,13 @@
       "notes": "RV64 only (XLEN=64). RV32 is out of scope."
     },
     {
+      "id": "loongarch64",
+      "bits": 64,
+      "family": "LoongArch",
+      "endianness": "little",
+      "notes": "LoongArch64 (LA64) only; 32-bit LoongArch ABIs are out of scope."
+    },
+    {
       "id": "sparc64",
       "bits": 64,
       "family": "SPARC",
@@ -96,6 +103,3 @@
     }
   ]
 }
-
-
-

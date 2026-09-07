@@ -2,7 +2,7 @@ module waifucad.platform.capabilities;
 
 enum GuiFamily : ubyte
 {
-    none, gtk1, gtk2, gtk3, gtk4, qt2, qt3, qt4, qt5, qt6, motif, xlib
+    none, gtk1, gtk2, gtk3, gtk4, qt2, qt3, qt4, qt5, qt6, motif, xlib, cocoa
 }
 
 enum GraphicsFamily : ubyte
@@ -24,6 +24,7 @@ struct RuntimeCapabilities
     bool hasQt6;
     bool hasMotif;
     bool hasXlib;
+    bool hasCocoa;
 
     bool hasDedicatedGpu;
     bool hasVulkanLoader;

@@ -19,12 +19,17 @@ fi
 grep -q '"requiredAddressBits"[[:space:]]*:[[:space:]]*64' config/architectures.json
 grep -q '"id"[[:space:]]*:[[:space:]]*"riscv64"' config/architectures.json
 grep -q '"id"[[:space:]]*:[[:space:]]*"linux-riscv64"' config/targets.json
+grep -q '"id"[[:space:]]*:[[:space:]]*"loongarch64"' config/architectures.json
+grep -q '"id"[[:space:]]*:[[:space:]]*"linux-loongarch64"' config/targets.json
 grep -q '"id"[[:space:]]*:[[:space:]]*"bsd-riscv64"' config/targets.json
 [ -f ports/arch/riscv64/README.md ]
 [ -x build/arch/riscv64-linux.sh ]
+[ -f ports/arch/loongarch64/README.md ]
+[ -x build/arch/loongarch64-linux.sh ]
 
 grep -q 'static assert(size_t.sizeof == 8' src/waifucad/core/platform_bits.d
 grep -q 'riscv64' src/waifucad/platform/target.d
+grep -q 'loongarch64' src/waifucad/platform/target.d
 grep -q 'wasm64' src/waifucad/platform/target.d
 
 for directory in ports/arch/*; do
@@ -64,7 +69,7 @@ if WC_TARGET_BITS=32 ./build.sh clean >/dev/null 2>&1; then
     exit 16
 fi
 
-printf '64-bit-only target/build layout test passed, including riscv64.\n'
+printf '64-bit-only target/build layout test passed, including riscv64 and loongarch64.\n'
 
 
 

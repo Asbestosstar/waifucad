@@ -5,7 +5,7 @@ Generated from the current source tree by `./make_todos.sh`. Build outputs and g
 .gitignore
 AGENTS.MD
 HANDOFF_PROMPT.md
-LICENCE-NOTICE.md
+LICENSE
 README.md
 assets/icons/README.md
 assets/icons/cmd_arc.svg
@@ -80,6 +80,7 @@ assets/themes/nightcore_2008/layout_1024x768.json
 assets/themes/nightcore_2008/ui_tokens.json
 build.sh
 build/arch/README.md
+build/arch/loongarch64-linux.sh
 build/arch/riscv64-linux.sh
 build/compiler.sh
 build/os/aix.sh
@@ -148,12 +149,17 @@ examples/scripts/p1_parametric_kernel.wcs
 examples/scripts/pmi_journal.wcs
 examples/scripts/ruby_style.wcs
 journals/README.md
+journals/smoke.wjournal
 make_todos.sh
 mods/README.md
 native/files/wc_temp.h
 native/files/wc_temp_posix.c
 native/graphics/wc_gpu_probe.c
 native/graphics/wc_gpu_probe.h
+native/gui/cocoa/README.md
+native/gui/cocoa/wc_cocoa.h
+native/gui/cocoa/wc_cocoa.m
+native/gui/cocoa/wc_cocoa_stub.c
 native/gui/gtk4/wc_gtk4.c
 native/gui/gtk4/wc_gtk4.h
 native/gui/gtk4/wc_gtk4_stub.c
@@ -163,6 +169,7 @@ native/threads/wc_threads_single.c
 ports/arch/aarch64/README.md
 ports/arch/alpha64/README.md
 ports/arch/ia64/README.md
+ports/arch/loongarch64/README.md
 ports/arch/mips64/README.md
 ports/arch/parisc64/README.md
 ports/arch/ppc64/README.md
@@ -181,6 +188,7 @@ ports/gpu_stack/lavapipe/README.md
 ports/gpu_stack/legacy-opengl/README.md
 ports/gpu_stack/mesa/README.md
 ports/gpu_stack/nvidia/README.md
+ports/gui_frontend/cocoa/README.md
 ports/gui_frontend/gtk1/README.md
 ports/gui_frontend/gtk2/README.md
 ports/gui_frontend/gtk3/README.md
@@ -230,7 +238,6 @@ src/waifucad/brep/README.md
 src/waifucad/brep/advanced.d
 src/waifucad/brep/builder.d
 src/waifucad/brep/classification.d
-src/waifucad/brep/debug.d
 src/waifucad/brep/dump.d
 src/waifucad/brep/euler.d
 src/waifucad/brep/geometry.d
@@ -254,6 +261,8 @@ src/waifucad/graphics/selector.d
 src/waifucad/gui/api.d
 src/waifucad/gui/command_console.d
 src/waifucad/gui/feature_dialogues.d
+src/waifucad/gui/frontends/cocoa/README.md
+src/waifucad/gui/frontends/cocoa/frontend.d
 src/waifucad/gui/frontends/gtk1/README.md
 src/waifucad/gui/frontends/gtk1/frontend.d
 src/waifucad/gui/frontends/gtk2/README.md
@@ -351,6 +360,9 @@ tests/brep_naming_static.py
 tests/brep_p1_advanced.d
 tests/brep_p1_advanced.sh
 tests/build_link_flags.sh
+tests/cocoa_frontend_static.py
+tests/cocoa_gui_target.sh
+tests/cocoa_native_syntax.sh
 tests/d_parser_hazards.py
 tests/d_semantic_compat.py
 tests/expression_p1.d

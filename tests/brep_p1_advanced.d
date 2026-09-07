@@ -6,7 +6,7 @@ import waifucad.brep.builder : addNurbsCurve, addNurbsCurveEdge, addNurbsSurface
     addPlaneFace, addLineEdge, addLoop, addCoedge, closeLoop;
 import waifucad.brep.euler : splitPlaneFaceByChord, mergeLastSplitPlaneFaces;
 import waifucad.brep.geometry : evaluateEdge, evaluateFace, coedgeStartVertex;
-import waifucad.brep.intersections : BRepCurveFaceIntersections, BRepFaceFaceIntersections, intersectLineFace, intersectFaces;
+import waifucad.brep.intersections : BRepCurveFaceIntersections, BRepFaceFaceIntersections, BRepIntersectionCurveKind, intersectLineFace, intersectFaces;
 import waifucad.brep.classification : BRepPointClassification, classifyPointInPlanarSolid;
 import waifucad.brep.kernel : makeBox, makeCylinder, makeCylinderAt, makeSphereAt;
 import waifucad.brep.naming : assignPrimitivePersistentTopology;

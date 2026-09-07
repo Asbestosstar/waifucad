@@ -1,8 +1,16 @@
 module waifucad.brep.properties;
 
-import core.stdc.math : sqrt;
-import waifucad.brep.geometry : WC_BREP_PI;
+import core.stdc.math : fabs, sqrt;
+import waifucad.brep.geometry : WC_BREP_PI, add, coedgeStartVertex, cross, dot, length, normalise, scale, subtract;
+import waifucad.brep.validate : validateClosedSolid;
 import waifucad.brep.types;
+
+/* Upper bound on one planar face ring for the polyhedron property path.
+   Constructed prism/loft rings are far smaller; oversized rings stay
+   unsupported rather than approximated. */
+private enum WC_PROPERTIES_MAX_RING = 256;
+private enum double WC_PROPERTIES_PLANE_TOL = 1.0e-6;
+private enum double WC_BREP_EPSILON_PROPERTIES = 1.0e-9;
 
 BRepMassProperties massProperties(BRepArena* arena, BRepId solidId) nothrow @nogc
 {
@@ -106,6 +114,110 @@ BRepMassProperties massProperties(BRepArena* arena, BRepId solidId) nothrow @nog
             (solid.bounds.minimum.y + solid.bounds.maximum.y) * 0.5,
             (solid.bounds.minimum.z + solid.bounds.maximum.z) * 0.5);
         result.valid = true;
+        return result;
+    }
+
+    /* Closed single-shell planar polyhedra (polygon prisms, parallel lofts,
+       pyramids) integrate exactly over their stored topology with the
+       divergence theorem. Every face must be a one-loop plane whose ring
+       points lie on the stored plane; curved faces, inner loops and open
+       solids remain unsupported here and report no exact properties rather
+       than an approximation. */
+    if (solid.primitiveKind == BRepPrimitiveKind.generic &&
+        solid.shellCount == 1 && solid.faceCount >= 4 &&
+        validateClosedSolid(arena, solidId) == 0)
+    {
+        double volumeSum = 0.0;
+        double areaSum = 0.0;
+        BRepVec3 centroidSum = BRepVec3(0.0, 0.0, 0.0);
+        bool supported = true;
+        foreach (fi; 0 .. solid.faceCount)
+        {
+            auto face = arena.face(solid.firstFace + cast(BRepId)fi);
+            if (face is null || face.surfaceKind != BRepSurfaceKind.plane ||
+                face.loopCount != 1 || face.outerLoop == 0)
+            {
+                supported = false;
+                break;
+            }
+            bool normalOk = false;
+            auto storedNormal = normalise(face.normal, &normalOk);
+            if (!normalOk)
+            {
+                supported = false;
+                break;
+            }
+            auto loop = arena.loop(face.outerLoop);
+            if (loop is null || loop.coedgeCount < 3 || loop.coedgeCount > WC_PROPERTIES_MAX_RING)
+            {
+                supported = false;
+                break;
+            }
+            BRepVec3[WC_PROPERTIES_MAX_RING] ring;
+            uint ringCount = 0;
+            auto coedgeId = loop.firstCoedge;
+            while (coedgeId != 0 && ringCount < loop.coedgeCount)
+            {
+                auto coedge = arena.coedge(coedgeId);
+                if (coedge is null)
+                {
+                    supported = false;
+                    break;
+                }
+                auto ringVertex = arena.vertex(coedgeStartVertex(arena, coedgeId));
+                if (ringVertex is null)
+                {
+                    supported = false;
+                    break;
+                }
+                if (fabs(dot(subtract(ringVertex.point, face.origin), storedNormal)) > WC_PROPERTIES_PLANE_TOL)
+                {
+                    supported = false;
+                    break;
+                }
+                ring[ringCount++] = ringVertex.point;
+                coedgeId = coedge.next == loop.firstCoedge ? 0 : coedge.next;
+            }
+            if (!supported || ringCount != loop.coedgeCount)
+            {
+                supported = false;
+                break;
+            }
+
+            /* Newell's normal gives the ring winding and the exact planar
+               polygon area (concave rings included). The material side is
+               the stored normal, flipped when the face is marked reversed. */
+            BRepVec3 newell = BRepVec3(0.0, 0.0, 0.0);
+            foreach (i; 0 .. ringCount)
+            {
+                auto current = ring[i];
+                auto following = ring[(i + 1) % ringCount];
+                newell = add(newell, cross(current, following));
+            }
+            auto outward = face.reversed ? scale(storedNormal, -1.0) : storedNormal;
+            auto winding = dot(newell, outward) >= 0.0 ? 1.0 : -1.0;
+            areaSum += length(newell) * 0.5;
+
+            /* Signed tetrahedra from the origin over a fan of the ring; the
+               signed fan is exact for any simple planar polygon. */
+            foreach (i; 1 .. ringCount - 1)
+            {
+                auto a = ring[0];
+                auto b = ring[i];
+                auto c = ring[i + 1];
+                auto determinant = dot(a, cross(b, c));
+                volumeSum += winding * determinant / 6.0;
+                centroidSum = add(centroidSum, scale(add(a, add(b, c)), winding * determinant / 24.0));
+            }
+        }
+        if (supported && volumeSum > WC_BREP_EPSILON_PROPERTIES)
+        {
+            result.volume = volumeSum;
+            result.surfaceArea = areaSum;
+            result.centreOfMass = scale(centroidSum, 1.0 / volumeSum);
+            result.valid = true;
+            return result;
+        }
         return result;
     }
 

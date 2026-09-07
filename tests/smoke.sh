@@ -44,6 +44,9 @@ sh ./tests/brep_naming.sh
 
 ./tests/native_threads.sh
 ./tests/gtk4_native_syntax.sh
+./tests/cocoa_native_syntax.sh
+python3 tests/cocoa_frontend_static.py
+./tests/cocoa_gui_target.sh
 ./build.sh batch
 ./build.sh gui
 
@@ -111,7 +114,7 @@ if grep -q '^get_' build/obj/model-getters.wjournal; then
 fi
 grep -Fqx 'box' build/obj/model-getters-wcs.txt
 grep -Fqx 'exact' build/obj/model-getters-wcs.txt
-grep -Fqx '[0,0,0,40,25,10]' build/obj/model-getters-wcs.txt
+grep -Fqx '[-20,-12.5,0,20,12.5,10]' build/obj/model-getters-wcs.txt
 grep -Fqx '10000' build/obj/model-getters-wcs.txt
 grep -Eq '^0x[0-9a-f]{16}$' build/obj/model-getters-wcs.txt
 grep -Fqx 'plane' build/obj/model-getters-wcs.txt

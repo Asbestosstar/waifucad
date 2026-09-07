@@ -14,6 +14,7 @@
 - Read-only `get_*` inspection commands write only to script-runtime output variables and must not be recorded as semantic model journal mutations.
 - Treat `config/targets.json` as a statement of intent/capability status, not marketing.  Never change a target to `verified` without a reproducible build/run record.
 - Keep GUI front-end choice separate from graphics back-end choice.
+- macOS targets default to the native Cocoa/AppKit front-end with Metal graphics. GTK4 on macOS is an optional fallback and must never be a macOS build requirement.
 - Prefer C ABI boundaries for plug-ins and foreign runtimes.
 - Preserve 1024×768 usability for the default theme.
 - Preserve dependency-safe multicore recompute. Never parallelise a feature with an unmet feature dependency.
@@ -52,6 +53,7 @@
 - [x] Add per-OS `.sh` build entry points under `build/os/` and `ports/os/*/build.sh`.
 - [x] Enforce a 64-bit-only ABI and add WebAssembly Memory64/wasm64 research target records.
 - [x] Add RISC-V as RV64-only (`riscv64`) with Linux/BSD research targets and an RV64 Linux cross-build helper.
+- [x] Add LoongArch as LA64-only (`loongarch64`) with a Linux research target and an LA64 Linux cross-build helper; new-world ABI, no LSX/LASX assumption in portable code.
 - [x] Add machine-readable 64-bit architecture/target width metadata and reject 32-bit target declarations.
 - [x] Clear preview/exact derived state on model reinitialisation so repeated CLI/scripts and read-only inspection cannot observe stale geometry metadata.
 
@@ -257,6 +259,9 @@
 ### P1 — GUI
 - [x] Add a shared centred AutoCAD-like command-console state/layout that routes model mutations through SCL.
 - [x] Render the shared command console in the GTK4 native front-end while preserving the shared SCL command path; terminal prototype remains available.
+- [x] Declare Cocoa/AppKit as the native macOS front-end: macOS GUI targets build through `native/gui/cocoa` (C ABI scaffold plus stub) and never probe or link GTK4.
+- [x] Implement the Objective-C AppKit/Metal bridge `native/gui/cocoa/wc_cocoa.m` (v1): native window, SVG-icon scrolling command ribbon, shared-path console, navigator rail and Metal clear-pass viewport with isometric bounds overlay; every widget action stays on the shared semantic SCL/journal command path.
+- [ ] Bring the Cocoa front-end to GTK4 parity: data-driven feature dialogues, sketch creation/snapping, Model Navigator reordering/properties, `assets/locales/` label lookup, and the dedicated Metal WaifuBRep renderer replacing the bounds-wireframe overlay.
 - [x] Render toolkit-neutral Modelling/PMI ribbon descriptors as real GTK4 tabs/groups/buttons with project-owned SVG icons; ribbon commands now execute simple actions directly or open data-driven feature dialogues while all model mutations still use semantic SCL transactions.
 - [x] Move the Nightcore theme image to the ribbon top-right and keep the viewport/navigation area free for CAD work.
 - [x] Launch the GTK4 application with no command-line arguments; retain `--bootstrap-info` for non-interactive smoke tests and `--console` for the terminal prototype.

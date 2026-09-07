@@ -45,9 +45,12 @@ Tokens tokenise(char* line) nothrow @nogc
                     ++cursor;
                 *destination++ = *cursor++;
             }
-            *destination = 0;
+            /* Step over the closing quote before NUL-terminating: with no
+               escapes destination sits on the quote itself, and writing the
+               terminator first would hide it and end the line early. */
             if (*cursor == quote)
                 ++cursor;
+            *destination = 0;
             continue;
         }
 

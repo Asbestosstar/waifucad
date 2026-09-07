@@ -148,6 +148,41 @@ build_native_temp_files() {
         -Inative/files -c native/files/wc_temp_posix.c -o build/obj/wc_temp.o
 }
 
+# Resolve the GUI front-end target OS. An explicit WC_TARGET_OS (set by the
+# build/os/ entry points and arch helpers) wins; otherwise the build host
+# decides. macOS selects the native Cocoa front-end and never probes GTK4.
+detect_target_os() {
+    if [ -n "${WC_TARGET_OS:-}" ]; then
+        printf '%s\n' "$WC_TARGET_OS"
+        return
+    fi
+    case "$(uname -s)" in
+        Darwin) printf 'macos\n' ;;
+        Linux)  printf 'linux\n' ;;
+        *)      printf 'unknown\n' ;;
+    esac
+}
+
+build_native_cocoa() {
+    build_native_gpu_probe
+    COCOA_LINK_FLAGS=
+    if [ -f native/gui/cocoa/wc_cocoa.m ] && [ "$(uname -s)" = Darwin ]; then
+        # shellcheck disable=SC2086
+        "$CC_BIN" ${CFLAGS:-} -fPIC -fobjc-arc \
+            -Inative/gui/cocoa -Inative/graphics \
+            -c native/gui/cocoa/wc_cocoa.m -o build/obj/wc_cocoa.o
+        case "$DC_KIND" in
+            gdc) COCOA_LINK_FLAGS="-framework Cocoa -framework Metal -framework QuartzCore" ;;
+            *) COCOA_LINK_FLAGS="-L=-framework -L=Cocoa -L=-framework -L=Metal -L=-framework -L=QuartzCore" ;;
+        esac
+        echo "Cocoa native frontend: enabled (AppKit/Metal bridge)"
+    else
+        "$CC_BIN" ${CFLAGS:-} -std=c11 -Wall -Wextra -fPIC \
+            -Inative/gui/cocoa -c native/gui/cocoa/wc_cocoa_stub.c -o build/obj/wc_cocoa.o
+        echo "Cocoa native frontend: stub (build on macOS for the AppKit/Metal bridge)" >&2
+    fi
+}
+
 build_native_threads() {
     impl=${WC_THREAD_IMPL:-posix}
     case "$impl" in
@@ -172,6 +207,46 @@ build_one() {
 }
 
 build_gui() {
+    gui_target_os=$(detect_target_os)
+    if [ "$gui_target_os" = macos ]; then
+        # macOS uses the native Cocoa/AppKit front-end. GTK4 is not probed,
+        # required or linked on this path.
+        build_native_cocoa
+        # dlopen lives in libSystem on macOS; only a non-Darwin build host
+        # exercising this path (for example Linux CI) needs the libdl shim.
+        # LDC needs linker flags wrapped as -L=..., GDC passes them through.
+        cocoa_dl_flag_ldc='-L=-ldl'
+        cocoa_dl_flag_gdc='-ldl'
+        if [ "$(uname -s)" = Darwin ]; then
+            cocoa_dl_flag_ldc=
+            cocoa_dl_flag_gdc=
+        fi
+        case "$DC_KIND" in
+            ldc)
+                # shellcheck disable=SC2086
+                "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} -d-version=WaifuCadGuiCocoa \
+                    $COMMON \
+                    src/waifucad/gui/frontends/cocoa/frontend.d \
+                    src/apps/waifucad_gui.d \
+                    build/obj/wc_threads.o build/obj/wc_temp.o \
+                    build/obj/wc_cocoa.o build/obj/wc_gpu_probe.o \
+                    ${LDFLAGS:-} $THREAD_LINK_FLAGS $COCOA_LINK_FLAGS $cocoa_dl_flag_ldc -L=-lm \
+                    -of=bin/waifucad-gui
+                ;;
+            gdc)
+                # shellcheck disable=SC2086
+                "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} -fversion=WaifuCadGuiCocoa \
+                    $COMMON \
+                    src/waifucad/gui/frontends/cocoa/frontend.d \
+                    src/apps/waifucad_gui.d \
+                    build/obj/wc_threads.o build/obj/wc_temp.o \
+                    build/obj/wc_cocoa.o build/obj/wc_gpu_probe.o \
+                    ${LDFLAGS:-} $THREAD_LINK_FLAGS $COCOA_LINK_FLAGS $cocoa_dl_flag_gdc -lm \
+                    -o bin/waifucad-gui
+                ;;
+        esac
+        return
+    fi
     build_native_gtk4
     case "$DC_KIND" in
         ldc)

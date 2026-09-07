@@ -24,6 +24,23 @@ extrude arc_prism arc_profile_sketch 10
 sketch ring_sketch work_xz
 sketch_polygon ring_profile ring_sketch "10,0;20,0;20,5;10,5"
 revolve_axis ring ring_profile work_z 360
+sketch sweep_sketch work_xy
+sketch_circle_at sweep_profile sweep_sketch 0 0 4
+line sweep_path 0 0 0 0 0 30
+sweep swept_pin sweep_profile sweep_path
+sketch loft_bottom_sketch work_xy
+sketch_polygon loft_bottom loft_bottom_sketch "-10,-8;10,-8;10,8;-10,8"
+sketch loft_top_sketch upper_plane
+sketch_polygon loft_top loft_top_sketch "-6,-5;6,-5;6,5;-6,5"
+loft lofted_body loft_bottom loft_top
+box outer_box 40 30 20
+shell hollow_box outer_box 2
+box box_a 20 20 10
+box box_b 20 20 5
+translate box_b_up box_b 0 0 5
+union box_union box_a box_b_up
+intersect box_intersection box_a box_b
+torus analytic_torus 30 5
 sketch relation_sketch work_xy
 sketch_line symmetry_axis relation_sketch 0 -10 0 10
 sketch_line symmetric_segment relation_sketch -4 2 4 2

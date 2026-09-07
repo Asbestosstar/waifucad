@@ -17,6 +17,13 @@
     "motif",
     "xlib"
   ],
+  "osFrontendPreference": {
+    "macos": [
+      "cocoa",
+      "qt6",
+      "gtk4"
+    ]
+  },
   "defaultSection": "modelling",
   "globalRibbonTabs": [
     "sections",

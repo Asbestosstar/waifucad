@@ -10,7 +10,28 @@ import waifucad.kernel.model : Model;
 import waifucad.journal.backend_api : ScriptContext;
 import waifucad.journal.journal : Journal;
 import waifucad.sections.pmi.store : PmiStore;
-import waifucad.gui.frontends.gtk4.frontend : gtk4NativeAvailable, runGtk4Native;
+/* Front-end selection is a build-time target decision: macOS builds
+   (-version=WaifuCadGuiCocoa) host the native Cocoa/AppKit bridge and never
+   require GTK4; every other target keeps the GTK4 native front-end. Both
+   branches expose the same two entry points under neutral aliases. */
+version (WaifuCadGuiCocoa)
+{
+    import waifucad.gui.frontends.cocoa.frontend : cocoaNativeAvailable, runCocoaNative;
+    alias guiNativeAvailable = cocoaNativeAvailable;
+    alias runGuiNative = runCocoaNative;
+    private enum guiBridgeLabel = "Cocoa native bridge";
+    private enum guiBridgeMissing = "not built (AppKit/Metal bridge is scaffold-only; see native/gui/cocoa)";
+    private enum guiRunHint = "Cocoa native frontend was not built. The macOS AppKit/Metal bridge is scaffold-only; use --console or --bootstrap-info until it lands.";
+}
+else
+{
+    import waifucad.gui.frontends.gtk4.frontend : gtk4NativeAvailable, runGtk4Native;
+    alias guiNativeAvailable = gtk4NativeAvailable;
+    alias runGuiNative = runGtk4Native;
+    private enum guiBridgeLabel = "GTK4 native bridge";
+    private enum guiBridgeMissing = "not built (install GTK4 development files)";
+    private enum guiRunHint = "GTK4 native frontend was not built. Install gtk4 development files and rebuild the GUI target.";
+}
 
 enum WC_GUI_STARTUP_COMMANDS = 16;
 
@@ -58,7 +79,8 @@ extern(C) int main(int argc, char** argv)
             bootstrapInfo = true;
             nativeGui = false;
         }
-        else if (strcmp(argv[i], "--native".ptr) == 0 || strcmp(argv[i], "--gtk4".ptr) == 0)
+        else if (strcmp(argv[i], "--native".ptr) == 0 || strcmp(argv[i], "--gtk4".ptr) == 0 ||
+                 strcmp(argv[i], "--cocoa".ptr) == 0)
         {
             nativeGui = true;
             terminalConsole = false;
@@ -141,19 +163,19 @@ extern(C) int main(int argc, char** argv)
             commandConsole.layout.width, commandConsole.layout.height);
     fprintf(stdout, "Command syntax: Ruby-like .wcs SCL; legacy command files use .scl; history capacity: %u\n",
             cast(uint)WC_COMMAND_CONSOLE_HISTORY);
-    fprintf(stdout, "GTK4 native bridge: %s\n", gtk4NativeAvailable() ? "available".ptr : "not built (install GTK4 development files)".ptr);
+    fprintf(stdout, "%s: %s\n", guiBridgeLabel.ptr, guiNativeAvailable() ? "available".ptr : guiBridgeMissing.ptr);
 
     if (bootstrapInfo)
         return 0;
 
     if (nativeGui)
     {
-        if (!gtk4NativeAvailable())
+        if (!guiNativeAvailable())
         {
-            fprintf(stderr, "GTK4 native frontend was not built. Install gtk4 development files and rebuild the GUI target.\n");
+            fprintf(stderr, "%s\n", guiRunHint.ptr);
             return 78;
         }
-        auto result = runGtk4Native(&model, &context, &ribbonHost, &commandConsole,
+        auto result = runGuiNative(&model, &context, &ribbonHost, &commandConsole,
                                     theme.width, theme.height, "WaifuCAD".ptr, theme.id,
                                     theme.navigatorBackground, theme.navigatorRailBackground,
                                     gtkRenderer, forceLavapipe);

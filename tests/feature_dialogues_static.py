@@ -63,7 +63,7 @@ assert 'descriptor->waifu_image' in native and 'gtk_picture_new_for_filename' in
 
 # Feature-reference fields declare semantic pick roles. Profile picks use the
 # real profile resolver, which explicitly accepts a Sketch container.
-for token in ['FeatureDialogueSelectionKind.profile', 'FeatureDialogueSelectionKind.body',
+for token in ['FeatureDialogueSelectionKind.profile', 'FeatureDialogueSelectionKind.solidBody',
               'FeatureDialogueSelectionKind.path', 'FeatureDialogueSelectionKind.anyFeature']:
     assert token in dialogues
 assert 'return resolveProfile(model, featureId, &profile);' in dialogues

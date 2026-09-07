@@ -156,6 +156,9 @@ private struct Parser
         if (end !is cursor)
         {
             cursor = end;
+            /* Unit suffixes may be written adjacent or space-separated
+               ("30deg" and "30 deg" both annotate degrees). */
+            skipSpace();
             Unit unit = Unit.unitless;
             if (cursor[0] == 'm' && cursor[1] == 'm')
             {

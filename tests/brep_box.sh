@@ -13,6 +13,7 @@ src/waifucad/brep/builder.d
 src/waifucad/brep/geometry.d
 src/waifucad/brep/properties.d
 src/waifucad/brep/euler.d
+src/waifucad/brep/naming.d
 src/waifucad/brep/kernel.d
 src/waifucad/brep/validate.d
 tests/brep_box.d'

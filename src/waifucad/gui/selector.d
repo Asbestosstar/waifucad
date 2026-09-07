@@ -1,6 +1,7 @@
 module waifucad.gui.selector;
 
 import waifucad.platform.capabilities : RuntimeCapabilities, GuiFamily;
+import waifucad.platform.target : OsFamily;
 
 // This is the generic modern-to-legacy order. A target-specific policy may
 // narrow it before runtime probing. Solaris policy permits GTK4 first, with
@@ -20,6 +21,17 @@ GuiFamily chooseGui(const RuntimeCapabilities* caps) nothrow @nogc
     if (caps.hasMotif) return GuiFamily.motif;
     if (caps.hasXlib) return GuiFamily.xlib;
     return GuiFamily.none;
+}
+
+/* Target-specific narrowing. macOS uses its native Cocoa/AppKit front-end by
+ * default; GTK4 there is an optional fallback and never a requirement, so it
+ * only wins when no Cocoa bridge is present. Other OS families keep the
+ * generic modern-to-legacy order. */
+GuiFamily chooseGuiForTarget(OsFamily os, const RuntimeCapabilities* caps) nothrow @nogc
+{
+    if (os == OsFamily.macos && caps !is null && caps.hasDisplay && caps.hasCocoa)
+        return GuiFamily.cocoa;
+    return chooseGui(caps);
 }
 
 

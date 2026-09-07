@@ -9,6 +9,7 @@ Every row must have `Bits = 64`; `tests/portability_layout.sh` rejects any other
 | `linux-x86_64` | 64 | bootstrap | gtk4, qt6, gtk3, xlib | vulkan, opengl |
 | `linux-aarch64` | 64 | bootstrap | gtk4, qt6, gtk3, xlib | vulkan, opengl |
 | `linux-riscv64` | 64 | research | gtk4, qt6, gtk3, xlib | vulkan, opengl |
+| `linux-loongarch64` | 64 | research | gtk4, qt6, gtk3, xlib | vulkan, opengl |
 | `linux-sparc64` | 64 | research | gtk4, qt6, gtk3, xlib | vulkan, opengl |
 | `linux-ppc64` | 64 | research | gtk4, qt6, gtk3, xlib | vulkan, opengl |
 | `linux-ppc64le` | 64 | research | gtk4, qt6, gtk3, xlib | vulkan, opengl |
@@ -26,8 +27,8 @@ Every row must have `Bits = 64`; `tests/portability_layout.sh` rejects any other
 | `illumos-sparc64` | 64 | research | gtk3, motif, xlib | opengl |
 | `illumos-aarch64` | 64 | research | gtk3, xlib | vulkan, opengl |
 | `macos-ppc64` | 64 | historical | qt4, qt3, xlib | opengl |
-| `macos-x86_64` | 64 | bootstrap | qt6, gtk4 | metal, vulkan, opengl |
-| `macos-aarch64` | 64 | bootstrap | qt6, gtk4 | metal, vulkan |
+| `macos-x86_64` | 64 | bootstrap | cocoa, qt6, gtk4 | metal, vulkan, opengl |
+| `macos-aarch64` | 64 | bootstrap | cocoa, qt6, gtk4 | metal, vulkan |
 | `irix-mips64` | 64 | historical | motif, xlib | opengl |
 | `haiku-x86_64` | 64 | research | qt6, qt5 | vulkan, opengl |
 | `haiku-aarch64` | 64 | research | qt6, qt5 | vulkan, opengl |

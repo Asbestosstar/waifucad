@@ -101,7 +101,7 @@ private BRepVec3 evaluateNurbsCurve(const BRepNurbsCurve* curve, double t, bool*
     if(curve is null) return BRepVec3(0,0,0);
     double[WC_BREP_MAX_NURBS_CURVE_POINTS] basis;
     if(!nurbsBasis(curve.degree,curve.controlPointCount,curve.knots.ptr,curve.knotCount,t,basis.ptr)) return BRepVec3(0,0,0);
-    BRepVec3 numerator; double denominator=0.0;
+    BRepVec3 numerator=BRepVec3(0,0,0); double denominator=0.0;
     foreach(i;0..curve.controlPointCount)
     {
         auto w=basis[i]*curve.weights[i]; denominator+=w; numerator=add(numerator,scale(curve.controlPoints[i],w));
@@ -116,7 +116,7 @@ private BRepVec3 evaluateNurbsSurface(const BRepNurbsSurface* surface, double u,
     double[WC_BREP_MAX_NURBS_CURVE_POINTS] bu; double[WC_BREP_MAX_NURBS_CURVE_POINTS] bv;
     if(!nurbsBasis(surface.degreeU,surface.countU,surface.knotsU.ptr,surface.knotCountU,u,bu.ptr) ||
        !nurbsBasis(surface.degreeV,surface.countV,surface.knotsV.ptr,surface.knotCountV,v,bv.ptr)) return BRepVec3(0,0,0);
-    BRepVec3 numerator; double denominator=0.0;
+    BRepVec3 numerator=BRepVec3(0,0,0); double denominator=0.0;
     foreach(j;0..surface.countV) foreach(i;0..surface.countU)
     {
         auto index=cast(uint)j*cast(uint)surface.countU+i; auto w=bu[i]*bv[j]*surface.weights[index];

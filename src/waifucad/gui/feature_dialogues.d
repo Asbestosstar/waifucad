@@ -34,7 +34,7 @@ enum FeatureDialogueSelectionKind : uint
     none = 0,
     anyFeature = 1,
     profile = 2,
-    body = 3,
+    solidBody = 3,
     path = 4
 }
 
@@ -165,15 +165,15 @@ private __gshared const FeatureDialogueFieldDescriptorV1[3] loftFields = [
 private __gshared const FeatureDialogueFieldDescriptorV1[3] binaryFields = [
     field("name".ptr, "Name".ptr, FeatureDialogueFieldKind.name, "result1".ptr, FeatureDialogueFieldSource.featureName),
     field("body_a".ptr, "First body".ptr, FeatureDialogueFieldKind.featureReference, "".ptr, FeatureDialogueFieldSource.operand, 0,
-          cast(uint)FeatureDialogueFieldFlags.required, null, FeatureDialogueSelectionKind.body),
+          cast(uint)FeatureDialogueFieldFlags.required, null, FeatureDialogueSelectionKind.solidBody),
     field("body_b".ptr, "Second body".ptr, FeatureDialogueFieldKind.featureReference, "".ptr, FeatureDialogueFieldSource.operand, 1,
-          cast(uint)FeatureDialogueFieldFlags.required, null, FeatureDialogueSelectionKind.body)
+          cast(uint)FeatureDialogueFieldFlags.required, null, FeatureDialogueSelectionKind.solidBody)
 ];
 
 private __gshared const FeatureDialogueFieldDescriptorV1[3] unaryAmountFields = [
     field("name".ptr, "Name".ptr, FeatureDialogueFieldKind.name, "feature1".ptr, FeatureDialogueFieldSource.featureName),
     field("body".ptr, "Body".ptr, FeatureDialogueFieldKind.featureReference, "".ptr, FeatureDialogueFieldSource.operand, 0,
-          cast(uint)FeatureDialogueFieldFlags.required, null, FeatureDialogueSelectionKind.body),
+          cast(uint)FeatureDialogueFieldFlags.required, null, FeatureDialogueSelectionKind.solidBody),
     field("amount".ptr, "Amount".ptr, FeatureDialogueFieldKind.value, "2.mm".ptr, FeatureDialogueFieldSource.operand, 1)
 ];
 
@@ -465,7 +465,7 @@ bool featureDialogueAcceptsSelection(Model* model, const(FeatureDialogueDescript
             ProfileRegion profile;
             return resolveProfile(model, featureId, &profile);
         }
-        case FeatureDialogueSelectionKind.body:
+        case FeatureDialogueSelectionKind.solidBody:
             return isBodyFeatureKind(feature.kind);
         case FeatureDialogueSelectionKind.path:
             return feature.kind == FeatureKind.freeLine || feature.kind == FeatureKind.freeArc ||

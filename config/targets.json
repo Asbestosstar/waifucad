@@ -57,6 +57,24 @@
       "notes": "RV64-only Linux target. Keep ISA extensions/toolchain ABI configurable; do not create an RV32 compatibility target."
     },
     {
+      "id": "linux-loongarch64",
+      "os": "linux",
+      "arch": "loongarch64",
+      "bits": 64,
+      "status": "research",
+      "guiPolicy": [
+        "gtk4",
+        "qt6",
+        "gtk3",
+        "xlib"
+      ],
+      "graphicsPolicy": [
+        "vulkan",
+        "opengl"
+      ],
+      "notes": "LoongArch64 (LA64, new-world ABI) Linux target. LLVM has a LoongArch backend from 17 onwards; verify a loongarch64-capable LDC/GDC before upgrading from research."
+    },
+    {
       "id": "linux-sparc64",
       "os": "linux",
       "arch": "sparc64",
@@ -350,6 +368,7 @@
       "arch": "x86_64",
       "status": "bootstrap",
       "guiPolicy": [
+        "cocoa",
         "qt6",
         "gtk4"
       ],
@@ -358,7 +377,7 @@
         "vulkan",
         "opengl"
       ],
-      "notes": "Vulkan means a portability implementation on macOS; Metal is native.",
+      "notes": "Cocoa/AppKit is the native macOS front-end and the default; GTK4 is an optional fallback, never a build requirement. Vulkan means a portability implementation on macOS; Metal is native.",
       "bits": 64
     },
     {
@@ -367,6 +386,7 @@
       "arch": "aarch64",
       "status": "bootstrap",
       "guiPolicy": [
+        "cocoa",
         "qt6",
         "gtk4"
       ],
@@ -374,7 +394,7 @@
         "metal",
         "vulkan"
       ],
-      "notes": "Metal preferred.",
+      "notes": "Cocoa/AppKit is the native macOS front-end and the default. Metal preferred.",
       "bits": 64
     },
     {
@@ -687,6 +707,3 @@
     }
   ]
 }
-
-
-

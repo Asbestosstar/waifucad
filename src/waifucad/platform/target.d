@@ -16,6 +16,7 @@ enum CpuArchitecture : ubyte
     x86_64,
     aarch64,
     riscv64,
+    loongarch64,
     sparc64,
     ppc64,
     ppc64le,
@@ -52,6 +53,7 @@ ubyte architectureAddressBits(CpuArchitecture arch) pure nothrow @nogc
         case CpuArchitecture.x86_64:
         case CpuArchitecture.aarch64:
         case CpuArchitecture.riscv64:
+        case CpuArchitecture.loongarch64:
         case CpuArchitecture.sparc64:
         case CpuArchitecture.ppc64:
         case CpuArchitecture.ppc64le:
@@ -72,6 +74,7 @@ bool isWaifuCad64BitArchitecture(CpuArchitecture arch) pure nothrow @nogc
 }
 
 static assert(architectureAddressBits(CpuArchitecture.riscv64) == 64);
+static assert(architectureAddressBits(CpuArchitecture.loongarch64) == 64);
 static assert(architectureAddressBits(CpuArchitecture.wasm64) == 64);
 
 

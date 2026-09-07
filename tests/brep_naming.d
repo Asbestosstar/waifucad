@@ -3,7 +3,7 @@ module tests.brep_naming;
 import core.stdc.stdio : fprintf, stderr;
 import waifucad.brep.euler : splitLineEdge;
 import waifucad.brep.kernel : makeBox, makeConeFrustum, makeSphere;
-import waifucad.brep.naming : assignPrimitivePersistentTopology, edgeByPersistentId,
+import waifucad.brep.naming : assignPrimitivePersistentTopology, derivePersistentTopologyId, edgeByPersistentId,
     faceByPersistentId, makePersistentTopologyId, persistentTopologyKind,
     persistentTopologyOwner, persistentTopologySlot, solidByPersistentId, vertexByPersistentId;
 import waifucad.brep.types;
@@ -73,12 +73,31 @@ extern(C) int main()
         return 23;
 
     /* A topology-preserving raw Euler split keeps the original edge identity.
-       New split topology is intentionally unnamed until a semantic feature or
-       boolean-imprint operation supplies a lineage token. */
+       Per docs/BREP.md the split vertex/second edge receive deterministic
+       derived persistent IDs and recorded split lineage. */
     auto split = splitLineEdge(&first, firstSolid.firstEdge, 0.5);
+    auto splitVertexName = derivePersistentTopologyId(edgeName, BRepTopologyKind.vertex, 1u);
+    auto splitEdgeName = derivePersistentTopologyId(edgeName, BRepTopologyKind.edge, 2u);
     if (!split.valid || first.edge(split.firstEdge).persistentId != edgeName ||
-        first.edge(split.secondEdge).persistentId != 0 || first.vertex(split.vertex).persistentId != 0)
+        splitVertexName == 0 || splitEdgeName == 0 ||
+        first.edge(split.secondEdge).persistentId != splitEdgeName ||
+        first.vertex(split.vertex).persistentId != splitVertexName ||
+        edgeByPersistentId(&first, splitEdgeName) is null ||
+        vertexByPersistentId(&first, splitVertexName) is null)
         return 24;
+    bool foundEdgeLineage = false;
+    bool foundVertexLineage = false;
+    foreach (i; 0 .. first.lineageCount)
+    {
+        auto record = first.lineage[i];
+        if (record.parentA == edgeName && record.kind == BRepLineageKind.split)
+        {
+            if (record.result == splitEdgeName) foundEdgeLineage = true;
+            if (record.result == splitVertexName) foundVertexLineage = true;
+        }
+    }
+    if (!foundEdgeLineage || !foundVertexLineage)
+        return 25;
 
     /* Cone/frustum topology changes may add/remove caps. Stable side/seam names
        remain tied to semantic slots rather than face/edge arena positions. */
