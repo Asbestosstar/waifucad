@@ -1096,6 +1096,13 @@ static void WcStrokeSegment(NSColor *colour, CGFloat lineWidth, NSPoint a, NSPoi
         if (diagonal > 1e-6)
             length = WcClamp(diagonal * 0.18, 5.0, 100.0);
     }
+    else
+    {
+        /* An empty part still owns the absolute CSYS: give it the stable
+           nominal model scale so axes and construction planes are visible
+           before any other geometry exists (GTK4 parity). */
+        transform = WcMakeEmptyCsysTransform((int)self.bounds.size.width, (int)height);
+    }
     if (!transform.valid)
         return;
 
@@ -1689,6 +1696,21 @@ static int WcFitFeature(uint32_t featureId)
     return button;
 }
 
+/* GTK4's set_size_request values are minimums and buttons grow to their
+   natural content size; AppKit frames are exact, so compute the natural
+   size and clamp it to the GTK4 minimums for consistent ribbons. */
+- (CGSize)sizeForIconButton:(NSButton *)button minWidth:(CGFloat)minWidth minHeight:(CGFloat)minHeight
+{
+    [button sizeToFit];
+    CGFloat width = button.frame.size.width + 10.0;
+    CGFloat height = button.frame.size.height + 6.0;
+    if (width < minWidth)
+        width = minWidth;
+    if (height < minHeight)
+        height = minHeight;
+    return NSMakeSize(width, height);
+}
+
 - (WcGroupView *)beginGroup:(NSString *)caption
 {
     WcGroupView *group = [[WcGroupView alloc] initWithFrame:NSZeroRect];
@@ -1768,23 +1790,24 @@ static int WcFitFeature(uint32_t featureId)
                                                iconSize:compact ? 22 : 30
                                                  action:@selector(onSectionButtonClicked:)
                                                     tag:(NSInteger)i];
-            CGFloat sectionWidth = compact ? 62.0 : 80.0;
-            CGFloat sectionHeight = compact ? 50.0 : 70.0;
+            button.toolTip = WcString(entries[i].id);
+            CGSize sectionNatural = [self sizeForIconButton:button
+                                                  minWidth:compact ? 62.0 : 80.0
+                                                 minHeight:compact ? 50.0 : 70.0];
             if (inRow == 4)
             {
                 inRow = 0;
                 innerX = 5.0;
-                innerY += sectionHeight + 2.0;
+                innerY += sectionNatural.height + 2.0;
             }
-            button.frame = NSMakeRect(innerX, innerY, sectionWidth, sectionHeight);
-            button.toolTip = WcString(entries[i].id);
+            button.frame = NSMakeRect(innerX, innerY, sectionNatural.width, sectionNatural.height);
             [group addSubview:button];
             [self.sectionIds addObject:WcString(entries[i].id)];
-            innerX += sectionWidth + 2.0;
+            innerX += sectionNatural.width + 2.0;
             if (innerX + 5.0 > groupWidth)
                 groupWidth = innerX + 5.0;
-            if (innerY + sectionHeight + 16.0 > groupHeight)
-                groupHeight = innerY + sectionHeight + 16.0;
+            if (innerY + sectionNatural.height + 16.0 > groupHeight)
+                groupHeight = innerY + sectionNatural.height + 16.0;
             ++inRow;
         }
         group.frame = NSMakeRect(docX, 2, groupWidth, groupHeight);
@@ -1795,10 +1818,11 @@ static int WcFitFeature(uint32_t featureId)
         NSButton *manageMods = [self makeIconTextButton:"tab_mods" title:@"Manage Mods" iconSize:26 action:NULL tag:0];
         manageMods.enabled = NO;
         manageMods.target = nil;
-        manageMods.frame = NSMakeRect(5, 16, 92, 56);
+        CGSize modsNatural = [self sizeForIconButton:manageMods minWidth:92 minHeight:56];
+        manageMods.frame = NSMakeRect(5, 16, modsNatural.width, modsNatural.height);
         manageMods.toolTip = @"Dynamic Mod discovery is still a P1 roadmap item; the versioned Mod ABI already exists";
         [mods addSubview:manageMods];
-        mods.frame = NSMakeRect(docX, 2, 102, 90);
+        mods.frame = NSMakeRect(docX, 2, modsNatural.width + 10, modsNatural.height + 34);
         [document addSubview:mods];
         docX += 106.0;
     }
@@ -1808,10 +1832,11 @@ static int WcFitFeature(uint32_t featureId)
         NSButton *manageMods = [self makeIconTextButton:"tab_mods" title:@"Manage Mods" iconSize:26 action:NULL tag:0];
         manageMods.enabled = NO;
         manageMods.target = nil;
-        manageMods.frame = NSMakeRect(5, 16, 92, 56);
+        CGSize modsNatural = [self sizeForIconButton:manageMods minWidth:92 minHeight:56];
+        manageMods.frame = NSMakeRect(5, 16, modsNatural.width, modsNatural.height);
         manageMods.toolTip = @"Dynamic Mod discovery is still a P1 roadmap item; the versioned Mod ABI already exists";
         [mods addSubview:manageMods];
-        mods.frame = NSMakeRect(docX, 2, 102, 90);
+        mods.frame = NSMakeRect(docX, 2, modsNatural.width + 10, modsNatural.height + 34);
         [document addSubview:mods];
         docX += 106.0;
     }
@@ -1830,6 +1855,7 @@ static int WcFitFeature(uint32_t featureId)
         WcGroupView *group = nil;
         CGFloat innerX = 5.0, innerY = 16.0;
         CGFloat groupWidth = 10.0, groupHeight = 32.0;
+        CGFloat rowHeight = buttonHeight;
         size_t inRow = 0;
 
         for (size_t i = 0; i < ribbon->command_count; ++i)
@@ -1870,6 +1896,7 @@ static int WcFitFeature(uint32_t featureId)
                 innerY = 16.0;
                 groupWidth = 10.0;
                 groupHeight = 32.0;
+                rowHeight = buttonHeight;
                 inRow = 0;
             }
             NSButton *button = [self makeIconTextButton:command->icon_name
@@ -1878,21 +1905,25 @@ static int WcFitFeature(uint32_t featureId)
                                                  action:@selector(onCommandClicked:)
                                                     tag:(NSInteger)self.commandIds.count];
             button.enabled = (command->flags & WC_COCOA_RIBBON_FLAG_PLANNED) == 0;
-            button.frame = NSMakeRect(innerX, innerY, buttonWidth, buttonHeight);
             button.toolTip = [NSString stringWithFormat:@"%@\n%@", WcString(command->localisation_key), WcString(command->id)];
+            CGSize natural = [self sizeForIconButton:button minWidth:buttonWidth minHeight:buttonHeight];
+            button.frame = NSMakeRect(innerX, innerY, natural.width, natural.height);
+            if (natural.height > rowHeight)
+                rowHeight = natural.height;
             [group addSubview:button];
             [self.commandIds addObject:WcString(command->id)];
-            innerX += buttonWidth + 2.0;
+            innerX += natural.width + 2.0;
             if (innerX + 5.0 > groupWidth)
                 groupWidth = innerX + 5.0;
-            if (innerY + buttonHeight + 16.0 > groupHeight)
-                groupHeight = innerY + buttonHeight + 16.0;
+            if (innerY + rowHeight + 16.0 > groupHeight)
+                groupHeight = innerY + rowHeight + 16.0;
             ++inRow;
             if (inRow == 4)
             {
                 inRow = 0;
                 innerX = 5.0;
-                innerY += buttonHeight + 2.0;
+                innerY += rowHeight + 2.0;
+                rowHeight = buttonHeight;
             }
         }
         if (group != nil)
@@ -1909,16 +1940,20 @@ static int WcFitFeature(uint32_t featureId)
             NSButton *runScript = [self makeIconTextButton:"cmd_script" title:@"Run Script" iconSize:compact ? 22 : 30
                                                     action:@selector(onCommandClicked:) tag:(NSInteger)self.commandIds.count];
             [self.commandIds addObject:@"modelling.run_script"];
-            runScript.frame = NSMakeRect(5, 16, buttonWidth, buttonHeight);
+            CGSize runNatural = [self sizeForIconButton:runScript minWidth:buttonWidth minHeight:buttonHeight];
+            runScript.frame = NSMakeRect(5, 16, runNatural.width, runNatural.height);
             [scripts addSubview:runScript];
             NSButton *commandLine = [self makeIconTextButton:"cmd_command" title:@"Command Line" iconSize:compact ? 22 : 30
                                                       action:@selector(onCommandClicked:) tag:(NSInteger)self.commandIds.count];
             [self.commandIds addObject:@"modelling.focus_command_line"];
-            commandLine.frame = NSMakeRect(5 + buttonWidth + 2, 16, buttonWidth, buttonHeight);
+            CGSize lineNatural = [self sizeForIconButton:commandLine minWidth:buttonWidth minHeight:buttonHeight];
+            commandLine.frame = NSMakeRect(5 + runNatural.width + 2, 16, lineNatural.width, lineNatural.height);
             [scripts addSubview:commandLine];
-            scripts.frame = NSMakeRect(docX, 2, buttonWidth * 2 + 14, buttonHeight + 32);
+            CGFloat scriptsWidth = runNatural.width + lineNatural.width + 14;
+            CGFloat scriptsHeight = (runNatural.height > lineNatural.height ? runNatural.height : lineNatural.height) + 32;
+            scripts.frame = NSMakeRect(docX, 2, scriptsWidth, scriptsHeight);
             [document addSubview:scripts];
-            docX += buttonWidth * 2 + 18.0;
+            docX += scriptsWidth + 4.0;
         }
     }
 
@@ -2648,6 +2683,7 @@ static int WcFitFeature(uint32_t featureId)
     [content addSubview:self.splitView];
 
     self.navigatorHost = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 210, self.splitView.bounds.size.height)];
+    self.navigatorHost.autoresizingMask = NSViewHeightSizable;
     [self.splitView addSubview:self.navigatorHost];
     self.graphicsHost = [[NSView alloc] initWithFrame:NSMakeRect(211, 0, self.splitView.bounds.size.width - 211, self.splitView.bounds.size.height)];
     [self.splitView addSubview:self.graphicsHost];
@@ -2936,6 +2972,14 @@ int wc_cocoa_run(const WcCocoaWindowConfig *config,
         [delegate updateStatus];
         [delegate.window makeKeyAndOrderFront:nil];
         [delegate.splitView setPosition:210 ofDividerAtIndex:0];
+        /* NSSplitView completes its first layout pass only after the window
+           is on screen; re-apply the 210 px navigator width afterwards (the
+           GTK4 host defers its paned position through an idle callback for
+           the same reason) and refresh the navigator once more. */
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [g_delegate.splitView setPosition:210 ofDividerAtIndex:0];
+            [g_delegate refreshModelNavigator];
+        });
 
         [NSApp activateIgnoringOtherApps:YES];
         [NSApp run];

@@ -64,7 +64,9 @@ for token in ['Model Navigator', 'Assembly Navigator', 'AI Agent',
               'global.sections', 'global.mods', 'Sections',
               'journal_start', 'journal_run', 'journal_stop()',
               'NSTableViewDropOn', 'menuForEvent', 'WC_COCOA_FEATURE_KIND_SKETCH',
-              'Nightcore theme image', 'Command complete — press Esc for viewport navigation']:
+              'Nightcore theme image', 'Command complete — press Esc for viewport navigation',
+              'transform = WcMakeEmptyCsysTransform', 'sizeForIconButton',
+              'dispatch_async(dispatch_get_main_queue()']:
     assert token in bridge, f'cocoa bridge is missing parity anchor {token}'
 
 # Icon names cross the C ABI through the layout-compatible descriptor mirrors.
