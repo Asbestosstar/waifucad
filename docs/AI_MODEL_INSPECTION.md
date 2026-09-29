@@ -1,0 +1,161 @@
+# AI Model Inspection (read-only SCL/WCS getters)
+
+Every `get_*` command is read-only, never journalled, and stores into the OUT
+ScriptRuntime variable. Ruby-like `.wcs` (`out = get_feature_volume(:name)`) and
+legacy `.scl` (`get_feature_volume OUT NAME`) dispatch to the same BetterC getter
+implementation in `src/waifucad/scl/getters.d`.
+
+Exact measurement getters fail when exact WaifuBRep properties are unavailable;
+they never substitute preview bounds. Persistent exact topology IDs are 64-bit
+hexadecimal strings (`0x` + 16 lowercase digits); raw arena indices are not
+persistent and are never handed out as stable references.
+
+## Command reference
+
+- `get_model_name` → string
+- `get_parameter_count` → number
+- `get_feature_count` → number
+- `get_model_worker_count` → number
+- `get_model_exact_solid_count` → number
+- `get_model_mesh_count` → number
+- `get_model_brep_counts` → number_list
+- `get_model_mesh_totals` → number_list
+- `get_parameter_name`(INDEX) → string
+- `get_parameter_exists`(NAME) → boolean
+- `get_parameter_id`(NAME) → number
+- `get_parameter_value`(NAME) → number
+- `get_parameter_unit`(NAME) → string
+- `get_parameter_dependant_count`(NAME) → number
+- `get_parameter_dependant_name`(NAME, INDEX) → string
+- `get_feature_name`(INDEX) → string
+- `get_feature_exists`(NAME) → boolean
+- `get_feature_id`(NAME) → number
+- `get_feature_index`(NAME) → number
+- `get_feature_kind`(NAME) → string
+- `get_feature_role`(NAME) → string
+- `get_feature_dirty`(NAME) → boolean
+- `get_feature_recommended`(NAME) → boolean
+- `get_feature_dependency_depth`(NAME) → number
+- `get_feature_operand_count`(NAME) → number
+- `get_feature_dependant_count`(NAME) → number
+- `get_feature_dependant_name`(NAME, INDEX) → string
+- `get_feature_payload`(NAME) → string
+- `get_feature_payload2`(NAME) → string
+- `get_feature_mesh_id`(NAME) → number
+- `get_feature_operand_kind`(NAME, INDEX) → string
+- `get_feature_operand_name`(NAME, INDEX) → string
+- `get_feature_operand_value`(NAME, INDEX) → number
+- `get_feature_operand_entity_id`(NAME, INDEX) → number
+- `get_feature_geometry_status`(NAME) → string
+- `get_feature_preview_error`(NAME) → number
+- `get_feature_exact_error`(NAME) → number
+- `get_feature_exact_solid_id`(NAME) → number
+- `get_feature_preview_bounds_valid`(NAME) → boolean
+- `get_feature_preview_bounds`(NAME) → number_list
+- `get_feature_exact_bounds_valid`(NAME) → boolean
+- `get_feature_exact_bounds`(NAME) → number_list
+- `get_feature_bounds_source`(NAME) → string
+- `get_feature_bounds`(NAME) → number_list
+- `get_feature_exact_primitive_kind`(NAME) → string
+- `get_feature_exact_topology_counts`(NAME) → number_list
+- `get_feature_volume`(NAME) → number
+- `get_feature_surface_area`(NAME) → number
+- `get_feature_centre_of_mass`(NAME) → number_list
+- `get_feature_mesh_vertex_count`(NAME) → number
+- `get_feature_mesh_triangle_count`(NAME) → number
+- `get_feature_mesh_source`(NAME) → string
+- `get_feature_mesh_format`(NAME) → string
+- `get_feature_mesh_closed_hint`(NAME) → boolean
+- `get_feature_mesh_convexity`(NAME) → number
+- `get_pmi_count` → number
+- `get_pmi_name`(INDEX) → string
+- `get_pmi_exists`(NAME) → boolean
+- `get_pmi_id`(NAME) → number
+- `get_pmi_kind`(NAME) → string
+- `get_pmi_text`(NAME) → string
+- `get_pmi_visible`(NAME) → boolean
+- `get_pmi_associative`(NAME) → boolean
+- `get_pmi_feature_id`(NAME) → number
+- `get_pmi_feature_name`(NAME) → string
+- `get_pmi_subentity_kind`(NAME) → number
+- `get_pmi_subentity_index`(NAME) → number
+- `get_feature_persistent_body_id`(NAME) → string
+- `get_feature_face_persistent_id`(NAME, INDEX) → string
+- `get_feature_edge_persistent_id`(NAME, INDEX) → string
+- `get_feature_vertex_persistent_id`(NAME, INDEX) → string
+- `get_topology_exists`(PERSISTENT_ID) → boolean
+- `get_topology_kind`(PERSISTENT_ID) → string
+- `get_topology_owner_feature_id`(PERSISTENT_ID) → number
+- `get_topology_semantic_slot`(PERSISTENT_ID) → number
+- `get_topology_vertex_point`(PERSISTENT_ID) → number_list
+- `get_topology_edge_start_vertex_id`(PERSISTENT_ID) → string
+- `get_topology_edge_end_vertex_id`(PERSISTENT_ID) → string
+- `get_topology_face_surface_kind`(PERSISTENT_ID) → string
+- `get_topology_owner_feature_name`(PERSISTENT_ID) → string
+- `get_topology_vertex_tolerance`(PERSISTENT_ID) → number
+- `get_topology_edge_curve_kind`(PERSISTENT_ID) → string
+- `get_topology_edge_radius`(PERSISTENT_ID) → number
+- `get_topology_edge_parameter_range`(PERSISTENT_ID) → number_list
+- `get_topology_face_origin`(PERSISTENT_ID) → number_list
+- `get_topology_face_axis`(PERSISTENT_ID) → number_list
+- `get_topology_face_radius`(PERSISTENT_ID) → number
+- `get_topology_face_secondary_radius`(PERSISTENT_ID) → number
+- `get_model_requested_worker_count` → number
+- `get_model_hardware_thread_count` → number
+- `get_model_persistent_worker_count` → number
+- `get_sketch_constraint_count` → number
+- `get_model_nurbs_curve_count` → number
+- `get_model_nurbs_surface_count` → number
+- `get_topology_lineage_count` → number
+- `get_model_recompute_cancelled` → boolean
+- `get_parameter_is_expression`(PARAMETER) → boolean
+- `get_parameter_expression`(PARAMETER) → string
+- `get_parameter_expression_error`(PARAMETER) → number
+- `get_sketch_constraint_name`(INDEX) → string
+- `get_sketch_constraint_exists`(CONSTRAINT) → boolean
+- `get_sketch_constraint_kind`(CONSTRAINT) → string
+- `get_sketch_constraint_status`(CONSTRAINT) → string
+- `get_sketch_constraint_value`(CONSTRAINT) → number
+- `get_sketch_constraint_enabled`(CONSTRAINT) → boolean
+- `get_sketch_constraint_sketch_name`(CONSTRAINT) → string
+- `get_sketch_constraint_first_feature_name`(CONSTRAINT) → string
+- `get_sketch_constraint_second_feature_name`(CONSTRAINT) → string
+- `get_sketch_constraint_points`(CONSTRAINT) → number_list
+- `get_datum_frame_origin`(FEATURE) → number_list
+- `get_datum_frame_x_axis`(FEATURE) → number_list
+- `get_datum_frame_y_axis`(FEATURE) → number_list
+- `get_datum_frame_z_axis`(FEATURE) → number_list
+- `get_datum_axis_origin`(FEATURE) → number_list
+- `get_datum_axis_direction`(FEATURE) → number_list
+- `get_topology_lineage_result`(INDEX) → persistent_id
+- `get_topology_lineage_parent_a`(INDEX) → persistent_id
+- `get_topology_lineage_parent_b`(INDEX) → persistent_id
+- `get_topology_lineage_kind`(INDEX) → string
+- `get_feature_exact_shell_count`(FEATURE) → number
+- `get_feature_exact_genus`(FEATURE) → number
+- `get_topology_face_loop_count`(PERSISTENT_ID) → number
+- `get_sketch_constraint_residual`(NAME) → number
+- `get_sketch_initial_dof`(SKETCH) → number
+- `get_sketch_dof`(SKETCH) → number
+- `get_sketch_constraint_equation_count`(SKETCH) → number
+- `get_sketch_satisfied_constraint_count`(SKETCH) → number
+- `get_sketch_redundant_constraint_count`(SKETCH) → number
+- `get_sketch_conflicting_constraint_count`(SKETCH) → number
+- `get_sketch_invalid_constraint_count`(SKETCH) → number
+- `get_sketch_unsatisfied_constraint_count`(SKETCH) → number
+- `get_sketch_solve_iterations`(SKETCH) → number
+- `get_sketch_max_residual`(SKETCH) → number
+- `get_sketch_solve_converged`(SKETCH) → boolean
+- `get_sketch_fully_constrained`(SKETCH) → boolean
+- `get_sketch_constraint_rank_contribution`(CONSTRAINT) → number
+- `get_sketch_constraint_rank_redundant`(CONSTRAINT) → boolean
+- `get_sketch_total_equation_count`(SKETCH) → number
+- `get_sketch_jacobian_rank`(SKETCH) → number
+- `get_sketch_rank_deficiency`(SKETCH) → number
+- `get_sketch_nonlinear_iterations`(SKETCH) → number
+- `get_sketch_under_constrained`(SKETCH) → boolean
+- `get_sketch_over_constrained`(SKETCH) → boolean
+- `get_sketch_rank_analysis_truncated`(SKETCH) → boolean
+- `get_feature_inertia`(NAME) → list
+- `get_feature_principal_inertia`(NAME) → list
+- `get_feature_principal_axes`(NAME) → list

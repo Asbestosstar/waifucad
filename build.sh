@@ -20,12 +20,82 @@ DC_BIN=$(pick_compiler)
 DC_KIND=$(compiler_kind "$DC_BIN")
 CC_BIN=$(pick_c_compiler)
 BASE_FLAGS=$(betterc_flags "$DC_KIND")
-THREAD_CFLAGS_VALUE=$(thread_cflags)
-THREAD_LINK_FLAGS=
-if [ "${WC_THREAD_IMPL:-posix}" = posix ]; then
-    THREAD_LINK_FLAGS=$(thread_d_link_flags "$DC_KIND")
-fi
 mkdir -p bin build/obj
+
+# Probe optional system libraries (see build/compiler.sh). Nothing here is a
+# hard dependency: PNG output is handwritten, Vulkan is dlopened, and even
+# libm/libdl/pthreads are probed so minimal hosts keep building.
+eval "$(detect_libm)"
+if [ "$WC_HAVE_LIBM" != 1 ]; then
+    echo "libm is required but no link spelling worked on this host." >&2
+    exit 2
+fi
+eval "$(detect_libdl)"
+# shellcheck disable=SC2086
+LIBM_D_FLAGS=$(d_link_flags "$DC_KIND" $LIBM_RAW)
+# shellcheck disable=SC2086
+LIBDL_D_FLAGS=$(d_link_flags "$DC_KIND" $LIBDL_RAW)
+
+# Threading. WC_THREAD_IMPL=auto (default) probes for POSIX threads and falls
+# back to the serial shim; an explicit THREAD_LDFLAGS keeps the historical
+# override contract and implies posix with those flags.
+THREAD_IMPL=${WC_THREAD_IMPL:-auto}
+case "$THREAD_IMPL" in
+    auto)
+        if [ -n "${THREAD_LDFLAGS:-}" ]; then
+            THREAD_IMPL=posix
+            THREAD_CFLAGS_VALUE=$(thread_cflags)
+            THREAD_LINK_FLAGS=$(thread_d_link_flags "$DC_KIND")
+        else
+            eval "$(detect_posix_threads)"
+            if [ "$WC_HAVE_PTHREAD" = 1 ]; then
+                THREAD_IMPL=posix
+                THREAD_CFLAGS_VALUE=$PTHREAD_CFLAGS_RAW
+                # shellcheck disable=SC2086
+                THREAD_LINK_FLAGS=$(d_link_flags "$DC_KIND" $PTHREAD_LDFLAGS_RAW)
+            else
+                THREAD_IMPL=single
+                THREAD_CFLAGS_VALUE=
+                THREAD_LINK_FLAGS=
+            fi
+        fi
+        ;;
+    posix)
+        THREAD_CFLAGS_VALUE=$(thread_cflags)
+        THREAD_LINK_FLAGS=$(thread_d_link_flags "$DC_KIND")
+        ;;
+    single)
+        THREAD_CFLAGS_VALUE=
+        THREAD_LINK_FLAGS=
+        ;;
+    *)
+        echo "Unknown WC_THREAD_IMPL '$THREAD_IMPL' (expected auto, posix or single)." >&2
+        exit 2
+        ;;
+esac
+
+# GPU probing dlopens Vulkan at runtime; hosts without dynamic loading get a
+# stub that reports no GPU probe support instead of failing the build.
+GPU_PROBE_IMPL=${WC_GPU_PROBE_IMPL:-auto}
+case "$GPU_PROBE_IMPL" in
+    auto)
+        if [ "$WC_HAVE_DLOPEN" = 1 ]; then GPU_PROBE_IMPL=dlopen; else GPU_PROBE_IMPL=stub; fi
+        ;;
+    dlopen)
+        if [ "$WC_HAVE_DLOPEN" != 1 ]; then
+            echo "WC_GPU_PROBE_IMPL=dlopen requested but this host cannot link dlopen." >&2
+            exit 2
+        fi
+        ;;
+    stub) ;;
+    *)
+        echo "Unknown WC_GPU_PROBE_IMPL '$GPU_PROBE_IMPL' (expected auto, dlopen or stub)." >&2
+        exit 2
+        ;;
+esac
+
+# DMD -betterC needs the druntime memset-fill shims; ldc/gdc get nothing.
+SHIM_OBJS=$(betterc_shim_objects "$DC_KIND" build/obj)
 
 # The base source list is intentionally explicit so historical make implementations
 # do not need recursive glob support.
@@ -43,6 +113,7 @@ src/waifucad/brep/transform.d
 src/waifucad/brep/tolerance.d
 src/waifucad/brep/naming.d
 src/waifucad/brep/properties.d
+src/waifucad/brep/inertia.d
 src/waifucad/brep/euler.d
 src/waifucad/brep/kernel.d
 src/waifucad/brep/validate.d
@@ -91,6 +162,7 @@ src/waifucad/platform/capabilities.d
 src/waifucad/platform/target.d
 src/waifucad/platform/temp_files.d
 src/waifucad/gui/api.d
+src/waifucad/gui/registry.d
 src/waifucad/gui/selector.d
 src/waifucad/gui/theme.d
 src/waifucad/gui/navigation.d
@@ -99,30 +171,27 @@ src/waifucad/gui/ribbon_actions.d
 src/waifucad/gui/feature_dialogues.d
 src/waifucad/gui/command_console.d
 src/waifucad/graphics/api.d
-src/waifucad/graphics/selector.d'
+src/waifucad/graphics/registry.d
+src/waifucad/graphics/selector.d
+src/waifucad/render/png.d
+src/waifucad/render/softshot.d
+src/waifucad/render/raytrace.d'
 
 
 
 gtk4_d_link_flags() {
     gtk_libs=$(pkg-config --libs gtk4)
-    if [ "$DC_KIND" = gdc ]; then
-        printf '%s\n' "$gtk_libs"
-        return
-    fi
-    result=
-    for flag in $gtk_libs; do
-        case "$flag" in
-            -pthread) result="$result -L-lpthread" ;;
-            -L*|-l*|-Wl,*) result="$result -L=$flag" ;;
-            *) result="$result $flag" ;;
-        esac
-    done
-    printf '%s\n' "$result"
+    # shellcheck disable=SC2086
+    d_link_flags "$DC_KIND" $gtk_libs
 }
 
 build_native_gpu_probe() {
+    case "$GPU_PROBE_IMPL" in
+        dlopen) gpu_probe_source=native/graphics/wc_gpu_probe.c ;;
+        stub) gpu_probe_source=native/graphics/wc_gpu_probe_stub.c ;;
+    esac
     "$CC_BIN" ${CFLAGS:-} -std=c11 -Wall -Wextra -fPIC \
-        -Inative/graphics -c native/graphics/wc_gpu_probe.c -o build/obj/wc_gpu_probe.o
+        -Inative/graphics -c "$gpu_probe_source" -o build/obj/wc_gpu_probe.o
 }
 
 build_native_gtk4() {
@@ -184,11 +253,10 @@ build_native_cocoa() {
 }
 
 build_native_threads() {
-    impl=${WC_THREAD_IMPL:-posix}
-    case "$impl" in
+    case "$THREAD_IMPL" in
         posix) thread_source=native/threads/wc_threads_posix.c; thread_cflags_value=$THREAD_CFLAGS_VALUE ;;
         single) thread_source=native/threads/wc_threads_single.c; thread_cflags_value= ;;
-        *) echo "Unknown WC_THREAD_IMPL '$impl' (expected posix or single)." >&2; exit 2 ;;
+        *) echo "Unknown WC_THREAD_IMPL '$THREAD_IMPL' (expected posix or single)." >&2; exit 2 ;;
     esac
     # shellcheck disable=SC2086
     "$CC_BIN" ${CFLAGS:-} $thread_cflags_value -std=c11 -Wall -Wextra \
@@ -201,8 +269,8 @@ build_one() {
     shift 2
     # shellcheck disable=SC2086
     case "$DC_KIND" in
-        ldc) "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} "$@" $COMMON "$main" build/obj/wc_threads.o build/obj/wc_temp.o ${LDFLAGS:-} $THREAD_LINK_FLAGS -of="$output" ;;
-        gdc) "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} "$@" $COMMON "$main" build/obj/wc_threads.o build/obj/wc_temp.o ${LDFLAGS:-} $THREAD_LINK_FLAGS -o "$output" ;;
+        ldc|dmd) "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} "$@" $COMMON "$main" build/obj/wc_threads.o build/obj/wc_temp.o $SHIM_OBJS ${LDFLAGS:-} $THREAD_LINK_FLAGS $LIBM_D_FLAGS -of="$output" ;;
+        gdc) "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} "$@" $COMMON "$main" build/obj/wc_threads.o build/obj/wc_temp.o ${LDFLAGS:-} $THREAD_LINK_FLAGS $LIBM_D_FLAGS -o "$output" ;;
     esac
 }
 
@@ -212,36 +280,31 @@ build_gui() {
         # macOS uses the native Cocoa/AppKit front-end. GTK4 is not probed,
         # required or linked on this path.
         build_native_cocoa
-        # dlopen lives in libSystem on macOS; only a non-Darwin build host
-        # exercising this path (for example Linux CI) needs the libdl shim.
-        # LDC needs linker flags wrapped as -L=..., GDC passes them through.
-        cocoa_dl_flag_ldc='-L=-ldl'
-        cocoa_dl_flag_gdc='-ldl'
-        if [ "$(uname -s)" = Darwin ]; then
-            cocoa_dl_flag_ldc=
-            cocoa_dl_flag_gdc=
-        fi
+        # dlopen/libm link spellings come from the probes, so macOS (libSystem
+        # folds both in) and minimal Linux hosts both link without hand-edits.
         case "$DC_KIND" in
-            ldc)
+            ldc|dmd)
                 # shellcheck disable=SC2086
-                "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} -d-version=WaifuCadGuiCocoa \
+                "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} $(version_flag "$DC_KIND" WaifuCadGuiCocoa) \
                     $COMMON \
+                    src/waifucad/gui/frontends/common/frontend.d \
                     src/waifucad/gui/frontends/cocoa/frontend.d \
                     src/apps/waifucad_gui.d \
                     build/obj/wc_threads.o build/obj/wc_temp.o \
-                    build/obj/wc_cocoa.o build/obj/wc_gpu_probe.o \
-                    ${LDFLAGS:-} $THREAD_LINK_FLAGS $COCOA_LINK_FLAGS $cocoa_dl_flag_ldc -L=-lm \
+                    build/obj/wc_cocoa.o build/obj/wc_gpu_probe.o $SHIM_OBJS \
+                    ${LDFLAGS:-} $THREAD_LINK_FLAGS $COCOA_LINK_FLAGS $LIBDL_D_FLAGS $LIBM_D_FLAGS \
                     -of=bin/waifucad-gui
                 ;;
             gdc)
                 # shellcheck disable=SC2086
-                "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} -fversion=WaifuCadGuiCocoa \
+                "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} $(version_flag "$DC_KIND" WaifuCadGuiCocoa) \
                     $COMMON \
+                    src/waifucad/gui/frontends/common/frontend.d \
                     src/waifucad/gui/frontends/cocoa/frontend.d \
                     src/apps/waifucad_gui.d \
                     build/obj/wc_threads.o build/obj/wc_temp.o \
                     build/obj/wc_cocoa.o build/obj/wc_gpu_probe.o \
-                    ${LDFLAGS:-} $THREAD_LINK_FLAGS $COCOA_LINK_FLAGS $cocoa_dl_flag_gdc -lm \
+                    ${LDFLAGS:-} $THREAD_LINK_FLAGS $COCOA_LINK_FLAGS $LIBDL_RAW $LIBM_RAW \
                     -o bin/waifucad-gui
                 ;;
         esac
@@ -249,26 +312,28 @@ build_gui() {
     fi
     build_native_gtk4
     case "$DC_KIND" in
-        ldc)
+        ldc|dmd)
             # shellcheck disable=SC2086
             "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} \
                 $COMMON \
+                src/waifucad/gui/frontends/common/frontend.d \
                 src/waifucad/gui/frontends/gtk4/frontend.d \
                 src/apps/waifucad_gui.d \
                 build/obj/wc_threads.o build/obj/wc_temp.o \
-                build/obj/wc_gtk4.o build/obj/wc_gpu_probe.o \
-                ${LDFLAGS:-} $THREAD_LINK_FLAGS $GTK4_LINK_FLAGS -L=-ldl -L=-lm \
+                build/obj/wc_gtk4.o build/obj/wc_gpu_probe.o $SHIM_OBJS \
+                ${LDFLAGS:-} $THREAD_LINK_FLAGS $GTK4_LINK_FLAGS $LIBDL_D_FLAGS $LIBM_D_FLAGS \
                 -of=bin/waifucad-gui
             ;;
         gdc)
             # shellcheck disable=SC2086
             "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} \
                 $COMMON \
+                src/waifucad/gui/frontends/common/frontend.d \
                 src/waifucad/gui/frontends/gtk4/frontend.d \
                 src/apps/waifucad_gui.d \
                 build/obj/wc_threads.o build/obj/wc_temp.o \
                 build/obj/wc_gtk4.o build/obj/wc_gpu_probe.o \
-                ${LDFLAGS:-} $THREAD_LINK_FLAGS $GTK4_LINK_FLAGS -ldl -lm \
+                ${LDFLAGS:-} $THREAD_LINK_FLAGS $GTK4_LINK_FLAGS $LIBDL_RAW $LIBM_RAW \
                 -o bin/waifucad-gui
             ;;
     esac

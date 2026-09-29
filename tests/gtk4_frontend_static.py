@@ -3,7 +3,10 @@ import re
 
 root = Path(__file__).resolve().parents[1]
 app = (root / 'src/apps/waifucad_gui.d').read_text()
-frontend = (root / 'src/waifucad/gui/frontends/gtk4/frontend.d').read_text()
+# The GTK4 front-end is a thin wrapper; the implementation lives in the
+# shared toolkit-neutral core, so the effective front-end text is both.
+shared_frontend = (root / 'src/waifucad/gui/frontends/common/frontend.d').read_text()
+frontend = (root / 'src/waifucad/gui/frontends/gtk4/frontend.d').read_text() + shared_frontend
 actions = (root / 'src/waifucad/gui/ribbon_actions.d').read_text()
 native = (root / 'native/gui/gtk4/wc_gtk4.c').read_text()
 header = (root / 'native/gui/gtk4/wc_gtk4.h').read_text()

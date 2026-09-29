@@ -20,6 +20,8 @@ import waifucad.scl.getters : executeGetter, WC_GETTER_NOT_HANDLED;
 import waifucad.sections.pmi.types : PmiAnnotationKind, PmiAssociation;
 import waifucad.brep.naming : faceByPersistentId, persistentTopologyOwner;
 import waifucad.brep.types : BRepSurfaceKind;
+import waifucad.render.png : WC_PNG_MAX_DIMENSION;
+import waifucad.render.softshot : ScreenshotOptions, renderModelScreenshot, WC_RENDER_FLAT, WC_RENDER_RAY;
 
 enum WC_SCL_MAX_CHILDREN = 16;
 private enum WC_PI = 3.14159265358979323846264338327950288;
@@ -575,6 +577,46 @@ private int executeTokens(ScriptContext* context, Tokens* tokens, const(char)* o
     {
         if (tokens.count < 2) return 253;
         return executeUseFile(context, tokens.values[1]);
+    }
+
+    /* Headless model screenshots (910..927).  The model is recomputed through
+       the exact backend and rendered off-screen to a PNG file, so batch runs
+       and SSH/AI sessions can inspect geometry without a display.  Optional
+       tokens: PATH [YAW] [PITCH] [ROLL] [WIDTH] [HEIGHT] [ZOOM] [flat|ray]. */
+    if (strcmp(command, "screenshot".ptr) == 0)
+    {
+        if (tokens.count < 2) return 910;
+        if (context.model is null) return 911;
+        ScreenshotOptions options;
+        options.setDefaults();
+        if (tokens.count >= 3 && (!parseNumber(tokens.values[2], &options.yawDegrees))) return 912;
+        if (tokens.count >= 4 && (!parseNumber(tokens.values[3], &options.pitchDegrees))) return 913;
+        if (tokens.count >= 5 && (!parseNumber(tokens.values[4], &options.rollDegrees))) return 914;
+        double number = 0.0;
+        if (tokens.count >= 6)
+        {
+            if (!parseNumber(tokens.values[5], &number) || number < 16.0 || number > WC_PNG_MAX_DIMENSION) return 915;
+            options.width = cast(uint)number;
+        }
+        if (tokens.count >= 7)
+        {
+            if (!parseNumber(tokens.values[6], &number) || number < 16.0 || number > WC_PNG_MAX_DIMENSION) return 916;
+            options.height = cast(uint)number;
+        }
+        if (tokens.count >= 8)
+        {
+            if (!parseNumber(tokens.values[7], &number) || number <= 0.0) return 917;
+            options.zoom = number;
+        }
+        if (tokens.count >= 9)
+        {
+            if (strcmp(tokens.values[8], "flat".ptr) == 0) options.renderMode = WC_RENDER_FLAT;
+            else if (strcmp(tokens.values[8], "ray".ptr) == 0) options.renderMode = WC_RENDER_RAY;
+            else return 927;
+        }
+        auto backend = waifuBRepBackend();
+        if (backend.recompute(context.model) != 0) return 918;
+        return renderModelScreenshot(context.model, tokens.values[1], &options) == 0 ? 0 : 919;
     }
 
     if (context.recordCommands && context.journal !is null)

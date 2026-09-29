@@ -5,6 +5,7 @@ cd "$ROOT"
 . ./build/compiler.sh
 DC_BIN=$(pick_compiler)
 DC_KIND=$(compiler_kind "$DC_BIN")
+SHIM_OBJS=$(betterc_shim_objects "$DC_KIND" build/obj)
 CC_BIN=$(pick_c_compiler)
 FLAGS=$(betterc_flags "$DC_KIND")
 THREAD_CFLAGS_VALUE=$(thread_cflags)
@@ -24,8 +25,8 @@ src/waifucad/kernel/sketch_solver.d
 src/waifucad/kernel/sketch_nonlinear.d
 tests/sketch_solver_p1.d'
 case "$DC_KIND" in
-  ldc) # shellcheck disable=SC2086
-       "$DC_BIN" $FLAGS $SOURCES build/tests/sketch_solver_threads.o $THREAD_LINK_FLAGS -of=build/tests/sketch_solver_p1 ;;
+  ldc|dmd) # shellcheck disable=SC2086
+       "$DC_BIN" $FLAGS $SOURCES build/tests/sketch_solver_threads.o $THREAD_LINK_FLAGS $SHIM_OBJS -of=build/tests/sketch_solver_p1 ;;
   gdc) # shellcheck disable=SC2086
        "$DC_BIN" $FLAGS $SOURCES build/tests/sketch_solver_threads.o $THREAD_LINK_FLAGS -o build/tests/sketch_solver_p1 ;;
 esac

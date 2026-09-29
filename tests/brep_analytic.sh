@@ -5,6 +5,7 @@ cd "$ROOT"
 . ./build/compiler.sh
 DC_BIN=$(pick_compiler)
 DC_KIND=$(compiler_kind "$DC_BIN")
+SHIM_OBJS=$(betterc_shim_objects "$DC_KIND" build/obj)
 FLAGS=$(betterc_flags "$DC_KIND")
 mkdir -p build/tests
 SOURCES='src/waifucad/core/platform_bits.d
@@ -16,9 +17,9 @@ src/waifucad/brep/kernel.d
 src/waifucad/brep/validate.d
 tests/brep_analytic.d'
 case "$DC_KIND" in
-    ldc)
+    ldc|dmd)
         # shellcheck disable=SC2086
-        "$DC_BIN" $FLAGS $SOURCES -of=build/tests/brep_analytic
+        "$DC_BIN" $FLAGS $SOURCES $SHIM_OBJS -of=build/tests/brep_analytic
         ;;
     gdc)
         # shellcheck disable=SC2086

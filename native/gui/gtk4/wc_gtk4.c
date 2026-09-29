@@ -4375,15 +4375,23 @@ int wc_gtk4_run(const WcGtk4WindowConfig *config,
     if (config == NULL || callbacks == NULL)
         return 10;
 
-    if (config->force_lavapipe) {
+    if (config->force_software_vulkan) {
         if (g_file_test("/usr/share/vulkan/icd.d/lvp_icd.x86_64.json", G_FILE_TEST_EXISTS))
             g_setenv("VK_ICD_FILENAMES", "/usr/share/vulkan/icd.d/lvp_icd.x86_64.json", TRUE);
         else if (g_file_test("/usr/share/vulkan/icd.d/lvp_icd.json", G_FILE_TEST_EXISTS))
             g_setenv("VK_ICD_FILENAMES", "/usr/share/vulkan/icd.d/lvp_icd.json", TRUE);
+        else {
+            /* No system lavapipe: fall back to a Mesa build under /opt
+             * (one directory per version) that ships the software Vulkan
+             * driver, exactly as the GPU probe would. */
+            char opt_icd[WC_GPU_SUMMARY_CAPACITY];
+            if (wc_gpu_opt_mesa_vulkan(NULL, 0, opt_icd, sizeof(opt_icd), 1) && opt_icd[0] != '\0')
+                g_setenv("VK_ICD_FILENAMES", opt_icd, TRUE);
+        }
         g_setenv("GSK_RENDERER", "vulkan", TRUE);
-    } else if (config->gsk_renderer != NULL && config->gsk_renderer[0] != '\0' &&
-               strcmp(config->gsk_renderer, "auto") != 0) {
-        g_setenv("GSK_RENDERER", config->gsk_renderer, TRUE);
+    } else if (config->renderer_hint != NULL && config->renderer_hint[0] != '\0' &&
+               strcmp(config->renderer_hint, "auto") != 0) {
+        g_setenv("GSK_RENDERER", config->renderer_hint, TRUE);
     }
 
     if (!gtk_init_check())

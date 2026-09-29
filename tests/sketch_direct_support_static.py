@@ -4,8 +4,9 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 interp = (root / 'src/waifucad/scl/interpreter.d').read_text()
 datums = (root / 'src/waifucad/kernel/datums.d').read_text()
-cocoa = (root / 'src/waifucad/gui/frontends/cocoa/frontend.d').read_text()
-gtk4 = (root / 'src/waifucad/gui/frontends/gtk4/frontend.d').read_text()
+shared_frontend = (root / 'src/waifucad/gui/frontends/common/frontend.d').read_text()
+cocoa = (root / 'src/waifucad/gui/frontends/cocoa/frontend.d').read_text() + shared_frontend
+gtk4 = (root / 'src/waifucad/gui/frontends/gtk4/frontend.d').read_text() + shared_frontend
 
 for token in ['tokens.count == 4', 'FeatureKind.datumCsys', 'tokens.count == 5', '"face".ptr', 'persistentTopologyOwner']:
     assert token in interp, f'direct Sketch SCL support missing {token}'

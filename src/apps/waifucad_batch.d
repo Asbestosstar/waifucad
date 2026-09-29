@@ -16,6 +16,11 @@ import waifucad.interchange.openscad.options : OpenScadImportOptions, OpenScadIm
     OpenScadExportOptions, OpenScadExportScope, OpenScadExportFallback, WC_SCAD_MAX_DEFINES;
 import waifucad.interchange.openscad.importer : importOpenScad;
 import waifucad.interchange.openscad.exporter : exportOpenScad;
+import waifucad.core.fixed_string : FixedString256;
+import waifucad.render.png : WC_PNG_MAX_DIMENSION;
+import waifucad.render.softshot : ScreenshotOptions, renderModelScreenshot, WC_RENDER_FLAT, WC_RENDER_RAY;
+
+private enum uint WC_BATCH_MAX_SHOTS = 8;
 
 private void usage() nothrow @nogc
 {
@@ -47,6 +52,11 @@ private void usage() nothrow @nogc
         "  --export-scad-no-stats --export-scad-no-source-names --export-scad-no-roundtrip-metadata\n" ~
         "  --export-scad-resolution-vars\n" ~
         "  --export-scad-flat --export-scad-render\n" ~
+        "\nHeadless screenshots (repeatable, max 8):\n" ~
+        "  --screenshot FILE --rotate YAW[,PITCH[,ROLL]] --size WxH --zoom Z\n" ~
+        "  --render flat|ray --ao-samples N --no-axes --no-shadows\n" ~
+        "  Modifiers apply to the most recent --screenshot, or to every following\n" ~
+        "  --screenshot when given before the first one.\n" ~
         "\n--threads 0 selects the host's online logical processors automatically.\n");
 }
 
@@ -70,6 +80,47 @@ private bool parseDoubleValue(const(char)* text, double* result) nothrow @nogc
     return true;
 }
 
+/* Parses "yaw,pitch[,roll]" in degrees. Missing components keep the current
+   option values so partial overrides like "--rotate ,45" work. */
+private bool parseShotRotation(const(char)* text, ScreenshotOptions* options) nothrow @nogc
+{
+    if (text is null || options is null || *text == 0) return false;
+    const(char)* cursor = text;
+    double[3] values = [options.yawDegrees, options.pitchDegrees, options.rollDegrees];
+    foreach (component; 0 .. 3)
+    {
+        const(char)* end = null;
+        auto parsed = strtod(cursor, &end);
+        if (end !is cursor) values[component] = parsed;
+        if (end is null || *end == 0)
+        {
+            options.yawDegrees = values[0];
+            options.pitchDegrees = values[1];
+            options.rollDegrees = values[2];
+            return component == 0 ? end !is cursor : true;
+        }
+        if (*end != ',') return false;
+        cursor = end + 1;
+    }
+    return false; // trailing comma after roll
+}
+
+/* Parses "WxH" pixel sizes (both in 16..WC_PNG_MAX_DIMENSION). */
+private bool parseShotSize(const(char)* text, ScreenshotOptions* options) nothrow @nogc
+{
+    if (text is null || options is null) return false;
+    const(char)* end = null;
+    auto w = strtoul(text, &end, 10);
+    if (end is text || *end != 'x') return false;
+    const(char)* hEnd = null;
+    auto h = strtoul(end + 1, &hEnd, 10);
+    if (hEnd is end + 1 || *hEnd != 0) return false;
+    if (w < 16 || h < 16 || w > WC_PNG_MAX_DIMENSION || h > WC_PNG_MAX_DIMENSION) return false;
+    options.width = cast(uint)w;
+    options.height = cast(uint)h;
+    return true;
+}
+
 extern(C) int main(int argc, char** argv)
 {
     const(char)* scriptPath = null;
@@ -86,6 +137,12 @@ extern(C) int main(int argc, char** argv)
 
     OpenScadImportOptions importOptions; importOptions.setDefaults();
     OpenScadExportOptions exportOptions; exportOptions.setDefaults();
+
+    ScreenshotOptions[WC_BATCH_MAX_SHOTS] shots;
+    FixedString256[WC_BATCH_MAX_SHOTS] shotPaths;
+    uint shotCount = 0;
+    ScreenshotOptions shotDefaults; shotDefaults.setDefaults();
+    foreach (ref shot; shots) shot = shotDefaults;
 
     int i = 1;
     while (i < argc)
@@ -105,6 +162,52 @@ extern(C) int main(int argc, char** argv)
         }
         else if (strcmp(arg, "--dump-model".ptr) == 0) dumpModel = true;
         else if (strcmp(arg, "--dump-brep".ptr) == 0) dumpExact = true;
+
+        /* Headless screenshots. Modifier flags (--rotate, --size, --zoom,
+           --render, --ao-samples, --no-axes, --no-shadows) apply to the most
+           recent --screenshot, or to every following --screenshot when given
+           before the first one. */
+        else if (strcmp(arg, "--screenshot".ptr) == 0 && i + 1 < argc)
+        {
+            if (shotCount >= WC_BATCH_MAX_SHOTS) { fprintf(stderr, "Too many --screenshot flags (max %u).\n", WC_BATCH_MAX_SHOTS); return 2; }
+            shots[shotCount] = shotDefaults;
+            shotPaths[shotCount].set(argv[++i]);
+            ++shotCount;
+        }
+        else if (strcmp(arg, "--rotate".ptr) == 0 && i + 1 < argc)
+        {
+            auto target = shotCount > 0 ? &shots[shotCount - 1] : &shotDefaults;
+            if (!parseShotRotation(argv[++i], target)) { fprintf(stderr, "Invalid --rotate value; expected yaw,pitch[,roll].\n"); return 2; }
+        }
+        else if (strcmp(arg, "--size".ptr) == 0 && i + 1 < argc)
+        {
+            auto target = shotCount > 0 ? &shots[shotCount - 1] : &shotDefaults;
+            if (!parseShotSize(argv[++i], target)) { fprintf(stderr, "Invalid --size value; expected WxH within 16..%u.\n", WC_PNG_MAX_DIMENSION); return 2; }
+        }
+        else if (strcmp(arg, "--zoom".ptr) == 0 && i + 1 < argc)
+        {
+            double zoom = 0.0;
+            if (!parseDoubleValue(argv[++i], &zoom) || zoom <= 0.0) { fprintf(stderr, "Invalid --zoom value.\n"); return 2; }
+            (shotCount > 0 ? &shots[shotCount - 1] : &shotDefaults).zoom = zoom;
+        }
+        else if (strcmp(arg, "--no-axes".ptr) == 0)
+            (shotCount > 0 ? &shots[shotCount - 1] : &shotDefaults).drawAxes = false;
+        else if (strcmp(arg, "--no-shadows".ptr) == 0)
+            (shotCount > 0 ? &shots[shotCount - 1] : &shotDefaults).shadows = false;
+        else if (strcmp(arg, "--render".ptr) == 0 && i + 1 < argc)
+        {
+            auto value = argv[++i];
+            auto target = shotCount > 0 ? &shots[shotCount - 1] : &shotDefaults;
+            if (strcmp(value, "flat".ptr) == 0) target.renderMode = WC_RENDER_FLAT;
+            else if (strcmp(value, "ray".ptr) == 0) target.renderMode = WC_RENDER_RAY;
+            else { fprintf(stderr, "Unknown --render mode; expected flat or ray.\n"); return 2; }
+        }
+        else if (strcmp(arg, "--ao-samples".ptr) == 0 && i + 1 < argc)
+        {
+            uint samples = 0;
+            if (!parseUnsigned(argv[++i], &samples, 64u)) { fprintf(stderr, "Invalid --ao-samples value; expected 0..64.\n"); return 2; }
+            (shotCount > 0 ? &shots[shotCount - 1] : &shotDefaults).aoSamples = samples;
+        }
 
         // Import engine/evaluation options.
         else if (strcmp(arg, "--scad-engine".ptr) == 0 && i + 1 < argc)
@@ -217,6 +320,20 @@ extern(C) int main(int argc, char** argv)
             else exportOptions.exportScope=OpenScadExportScope.allDumbBodies;
         }
         result=exportOpenScad(&model,scadExportPath,&exportOptions);
+    }
+
+    if (result == 0 && shotCount > 0)
+    {
+        foreach (shotIndex; 0 .. shotCount)
+        {
+            result = renderModelScreenshot(&model, shotPaths[shotIndex].ptr(), &shots[shotIndex]);
+            if (result != 0)
+            {
+                fprintf(stderr, "Screenshot failed (%d): %s\n", result, shotPaths[shotIndex].ptr());
+                break;
+            }
+            fprintf(stdout, "Wrote screenshot: %s (%ux%u)\n", shotPaths[shotIndex].ptr(), shots[shotIndex].width, shots[shotIndex].height);
+        }
     }
 
     if(dumpModel) model.dump();

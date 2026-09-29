@@ -2,6 +2,46 @@
 
 WaifuCAD keeps **GUI front-end** and **3D graphics back-end** selection separate. A front-end owns native widgets/windowing; a graphics back-end owns viewport rendering. This permits combinations such as GTK4 + Vulkan on a current Linux workstation and, later, Motif/Xlib + OpenGL on historical UNIX targets.
 
+## Shared front-end core
+
+All GUI front-ends share a single toolkit-neutral implementation; there is no per-toolkit copy of the windowing/bridging logic:
+
+- **D side** — `src/waifucad/gui/frontends/common/frontend.d` owns the neutral `WcGui*` ABI structs, the callback table, and every model → snapshot / ribbon / sketch / feature-dialogue bridge. A concrete front-end module (for example `frontends/cocoa/frontend.d` or `frontends/gtk4/frontend.d`) is a thin wrapper: it declares its native `wc_<id>_native_available` / `wc_<id>_run` symbols, instantiates the shared `guiFrontendAvailable!` / `runGuiFrontend!` templates, and re-exports its historical prefixed names as aliases.
+- **Native side** — `native/gui/shared/wc_gui_abi.h` is the single C ABI. The toolkit headers (`native/gui/cocoa/wc_cocoa.h`, `native/gui/gtk4/wc_gtk4.h`) are compatibility shims that typedef the prefixed names onto the neutral types.
+- **Selection** — `src/waifucad/gui/registry.d` holds the single ordered front-end preference table; `selector.d` walks it. Graphics mirrors this with `src/waifucad/graphics/registry.d` and its selector.
+
+A behavioural change is therefore made once, in the shared core or the shared ABI, and every front-end picks it up.
+
+### Adding a new GUI front-end
+
+1. Add the family to `GuiFamily` plus a capability flag in `src/waifucad/platform/capabilities.d`.
+2. Add one row to `guiFrontendRegistry` in `src/waifucad/gui/registry.d` (position encodes preference).
+3. Create `src/waifucad/gui/frontends/<id>/frontend.d` as a thin wrapper over the shared core, copying the Cocoa/GTK4 pattern.
+4. Create `native/gui/<id>/` with a bridge that consumes `native/gui/shared/wc_gui_abi.h` and exports `wc_<id>_native_available` / `wc_<id>_run`.
+5. List the new D module in `build.sh` next to the shared core.
+
+### Adding a new graphics back-end
+
+1. Add the family to `GraphicsFamily` plus capability flags in `capabilities.d`.
+2. Add one row to `graphicsBackendRegistry` in `src/waifucad/graphics/registry.d` with its availability predicate.
+3. Teach the native viewport bridges to consume the new renderer hint (the neutral `WcGuiWindowConfig.renderer_hint` / `force_software_vulkan` fields already carry the selection across the ABI).
+
+### Vulkan discovery and /opt Mesa
+
+The GPU probe (`native/graphics/wc_gpu_probe.c`) checks the system Vulkan
+loader and ICD paths first, then scans the `/opt` directory for versioned
+Mesa trees (any `/opt/*mesa*` entry) with Vulkan support — ICD manifests
+under `share/vulkan/icd.d` and/or a `libvulkan.so.1` loader. When several
+versions qualify, the one with manifests plus a loader wins, ties going to
+the lexicographically later (newer) version. If the system has no loader, or
+the loader exposes no devices, the probe configures the loader with the /opt
+Mesa's ICD manifests (`VK_ICD_FILENAMES`, only when unset) and retries. The
+result is reported in the probe summary and the `has_opt_mesa` /
+`opt_mesa_has_vulkan` / `opt_mesa_used` fields. The GTK4 `--lavapipe` path
+uses the same scan (`wc_gpu_opt_mesa_vulkan` with the lavapipe filter) when
+no system lavapipe ICD exists. Tests can point the scan elsewhere with
+`WC_OPT_MESA_ROOT`.
+
 The baseline layout remains usable at **1024×768** and uses the `nightcore_2008` visual tokens without copying proprietary CAD artwork or controls.
 
 ## GTK4 status

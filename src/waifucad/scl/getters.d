@@ -4,6 +4,7 @@ import core.stdc.stdio : snprintf;
 import core.stdc.stdlib : strtod, strtoull;
 import core.stdc.string : strcmp, strlen;
 import waifucad.brep.properties : massProperties;
+import waifucad.brep.inertia : inertiaProperties;
 import waifucad.brep.naming : edgeByPersistentId, faceByPersistentId, persistentTopologyKind, persistentTopologyOwner, persistentTopologySlot, solidByPersistentId, vertexByPersistentId;
 import waifucad.brep.types : BRepCurveKind, BRepLineageKind, BRepPersistentId, BRepPrimitiveKind, BRepSurfaceKind, BRepTopologyKind, BRepVec3;
 import waifucad.core.jobs : hardwareThreadCount, persistentWorkerCount;
@@ -816,6 +817,42 @@ int executeGetter(ScriptContext* context, Tokens* tokens) nothrow @nogc
             return setNumber(context, tokens, properties.surfaceArea) ? 0 : 581;
         double[3] centre = [properties.centreOfMass.x, properties.centreOfMass.y, properties.centreOfMass.z];
         return setList(context, tokens, centre.ptr, 3) ? 0 : 582;
+    }
+
+    // Inertia tensor inspection (920..926). Analytic for the closed-form
+    // primitives, simplex-integrated for generic polyhedra.
+    if (strcmp(command, "get_feature_inertia".ptr) == 0 ||
+        strcmp(command, "get_feature_principal_inertia".ptr) == 0 ||
+        strcmp(command, "get_feature_principal_axes".ptr) == 0)
+    {
+        if (tokens.count < 3) return 920;
+        auto feature = featureByName(context, tokens.values[2]);
+        size_t index = 0;
+        if (feature is null || !featureIndex(context, feature, &index)) return 921;
+        if (context.model.exactStatus[index] != ExactGeometryStatus.exact) return 922;
+        auto solidId = context.model.exactSolidIds[index];
+        if (solidId == 0) return 922;
+        auto inertia = inertiaProperties(&context.model.exactGeometry, solidId);
+        if (!inertia.valid) return 923;
+        if (strcmp(command, "get_feature_inertia".ptr) == 0)
+        {
+            double[6] values = [
+                inertia.cmIxx, inertia.cmIyy, inertia.cmIzz,
+                inertia.cmPxy, inertia.cmPxz, inertia.cmPyz
+            ];
+            return setList(context, tokens, values.ptr, 6) ? 0 : 924;
+        }
+        if (strcmp(command, "get_feature_principal_inertia".ptr) == 0)
+        {
+            double[3] values = inertia.principalMoments;
+            return setList(context, tokens, values.ptr, 3) ? 0 : 925;
+        }
+        double[9] axes = [
+            inertia.principalAxes[0].x, inertia.principalAxes[0].y, inertia.principalAxes[0].z,
+            inertia.principalAxes[1].x, inertia.principalAxes[1].y, inertia.principalAxes[1].z,
+            inertia.principalAxes[2].x, inertia.principalAxes[2].y, inertia.principalAxes[2].z
+        ];
+        return setList(context, tokens, axes.ptr, 9) ? 0 : 926;
     }
 
 

@@ -30,7 +30,8 @@ assert 'chooseGuiForTarget' in selector and 'GuiFamily.cocoa' in selector
 assert 'OsFamily.macos' in selector
 
 # --- front-end scaffold and native shim -------------------------------------
-frontend = (root / 'src/waifucad/gui/frontends/cocoa/frontend.d').read_text()
+shared_frontend = (root / 'src/waifucad/gui/frontends/common/frontend.d').read_text()
+frontend = (root / 'src/waifucad/gui/frontends/cocoa/frontend.d').read_text() + shared_frontend
 for token in ['cocoaDescriptor', 'cocoaNativeAvailable', 'runCocoaNative',
               'wc_cocoa_native_available', 'wc_cocoa_run', 'GuiFrontendV1',
               '"cocoa".ptr', 'Cocoa / AppKit']:
@@ -150,10 +151,12 @@ make_todos = (root / 'make_todos.sh').read_text()
 assert '*.m|*.mm' in make_todos, 'make_todos.sh must include Objective-C .m/.mm sources'
 
 # Icon names cross the C ABI through the layout-compatible descriptor mirrors.
-assert 'const char *icon_name;' in native_header
+# The struct bodies live once in the shared ABI; the Cocoa header is a shim.
+abi_header = (root / 'native/gui/shared/wc_gui_abi.h').read_text()
+assert 'const char *icon_name;' in abi_header
 assert 'WcCocoaRibbonSnapshot' in native_header and 'WcCocoaSectionEntry' in native_header
-assert 'cast(const(WcCocoaRibbonSnapshot)*)ribbon' in frontend
-assert 'cast(const(WcCocoaSectionEntry)*)entries' in frontend
+assert 'cast(const(WcGuiRibbonSnapshot)*)ribbon' in shared_frontend
+assert 'cast(const(WcGuiSectionEntry)*)entries' in shared_frontend
 # Semantic SCL feature actions/reorders mirror the GTK4 trampolines.
 for token in ['feature_delete', 'feature_move_up', 'feature_move_down',
               'feature_move_after', 'feature_move_before']:
@@ -168,7 +171,9 @@ assert 'guiNativeAvailable' in app and 'runGuiNative' in app
 # --- build system ---------------------------------------------------------------
 build = (root / 'build.sh').read_text()
 assert 'detect_target_os' in build and 'build_native_cocoa' in build
-assert '-d-version=WaifuCadGuiCocoa' in build and '-fversion=WaifuCadGuiCocoa' in build
+compiler = (root / 'build/compiler.sh').read_text()
+assert 'version_flag "$DC_KIND" WaifuCadGuiCocoa' in build
+assert '"-d-version=$ident"' in compiler and '"-fversion=$ident"' in compiler
 assert 'wc_cocoa_stub.c' in build and 'wc_cocoa.m' in build
 macos_branch = build.split('if [ "$gui_target_os" = macos ]; then', 1)[1].split('build_native_gtk4', 1)[0]
 assert 'pkg-config' not in macos_branch, 'macOS GUI branch must not probe GTK4 via pkg-config'
@@ -178,7 +183,8 @@ for forbidden in ['wc_gtk4', 'frontends/gtk4', 'GTK4_LINK_FLAGS']:
 cocoa_native = build.split('build_native_cocoa() {', 1)[1].split('\n}\n', 1)[0]
 assert '-L=-framework -L=Cocoa -L=-framework -L=Metal -L=-framework -L=QuartzCore' in cocoa_native
 assert '"-framework Cocoa -framework Metal -framework QuartzCore"' in cocoa_native
-assert 'cocoa_dl_flag_ldc' in macos_branch and 'cocoa_dl_flag_gdc' in macos_branch
+assert 'LIBDL_D_FLAGS' in macos_branch and 'LIBDL_RAW' in macos_branch
+assert 'detect_libdl' in compiler, 'libdl must be probed, not hard-coded'
 
 # --- LoongArch stays LA64-only ----------------------------------------------------
 architectures = json.loads((root / 'config/architectures.json').read_text())

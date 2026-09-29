@@ -3,12 +3,13 @@ import re
 
 root = Path(__file__).resolve().parents[1]
 dialogues = (root / 'src/waifucad/gui/feature_dialogues.d').read_text()
-frontend = (root / 'src/waifucad/gui/frontends/gtk4/frontend.d').read_text()
+shared_frontend = (root / 'src/waifucad/gui/frontends/common/frontend.d').read_text()
+frontend = (root / 'src/waifucad/gui/frontends/gtk4/frontend.d').read_text() + shared_frontend
 native = (root / 'native/gui/gtk4/wc_gtk4.c').read_text()
 header = (root / 'native/gui/gtk4/wc_gtk4.h').read_text()
 shared_header = (root / 'native/gui/shared/wc_feature_dialogue.h').read_text()
 cocoa_header = (root / 'native/gui/cocoa/wc_cocoa.h').read_text()
-cocoa_frontend = (root / 'src/waifucad/gui/frontends/cocoa/frontend.d').read_text()
+cocoa_frontend = (root / 'src/waifucad/gui/frontends/cocoa/frontend.d').read_text() + shared_frontend
 cocoa_native = (root / 'native/gui/cocoa/wc_cocoa.m').read_text()
 model = (root / 'src/waifucad/kernel/model.d').read_text()
 interpreter = (root / 'src/waifucad/scl/interpreter.d').read_text()

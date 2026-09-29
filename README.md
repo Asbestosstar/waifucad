@@ -15,7 +15,7 @@ The in-tree exact geometry engine is **WaifuBRep**. It currently has exact analy
 4. GUI, AI and batch execution route through the same model/journal command path.
 5. Journalling records semantic modelling commands, not GUI mouse co-ordinates.
 6. Sections are first-party application modules; Mods are third-party extensions; Scripts are executable journal/program files.
-7. GUI front-ends and graphics back-ends are independent selections.
+7. GUI front-ends and graphics back-ends are independent selections, and both are abstracted behind single shared definitions: one toolkit-neutral front-end core (`src/waifucad/gui/frontends/common/frontend.d` + `native/gui/shared/wc_gui_abi.h`) and one ordered registry per dimension (`gui/registry.d`, `graphics/registry.d`). A change to the shared core or ABI propagates to every front-end; adding a front-end or back-end is a registry row plus a thin binding. See `docs/GUI.md`.
 8. Platform manifests distinguish requested/research targets from verified ports.
 9. Source comments and project prose use British spelling.
 10. OpenSCAD's published cheat-sheet capability set is a minimum feature baseline for SCL, without requiring OpenSCAD source syntax.

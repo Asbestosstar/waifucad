@@ -30,6 +30,7 @@ python3 ./tests/pmi_scl_static.py
 ./tests/build_link_flags.sh
 ./tests/gui_build_link_flags.sh
 ./tests/native_temp_files.sh
+./tests/optional_deps.sh
 if command -v python3 >/dev/null 2>&1; then
     python3 ./tests/validate_target_manifests.py
 fi
@@ -41,6 +42,7 @@ fi
 ./tests/expression_p1.sh
 sh ./tests/brep_naming.sh
 ./tests/scl_ruby_syntax.sh
+./tests/brep_inertia.sh
 
 ./tests/native_threads.sh
 ./tests/gtk4_native_syntax.sh
@@ -49,6 +51,7 @@ python3 tests/cocoa_frontend_static.py
 ./tests/cocoa_gui_target.sh
 ./build.sh batch
 ./build.sh gui
+./tests/batch_screenshot.sh
 
 # Feature-dialogue edits are semantic SCL transactions that preserve feature identity.
 ./bin/waifucad-batch --script tests/feature_dialogue_edit.wcs > build/obj/feature-dialogue-edit.txt

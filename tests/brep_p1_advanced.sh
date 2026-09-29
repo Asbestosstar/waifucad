@@ -5,6 +5,7 @@ cd "$ROOT"
 . ./build/compiler.sh
 DC_BIN=$(pick_compiler)
 DC_KIND=$(compiler_kind "$DC_BIN")
+SHIM_OBJS=$(betterc_shim_objects "$DC_KIND" build/obj)
 FLAGS=$(betterc_flags "$DC_KIND")
 CC_BIN=$(pick_c_compiler)
 THREAD_CFLAGS_VALUE=$(thread_cflags)
@@ -32,8 +33,8 @@ src/waifucad/mesh/tessellate_brep.d
 src/waifucad/interchange/openscad/options.d
 tests/brep_p1_advanced.d'
 case "$DC_KIND" in
-  ldc) # shellcheck disable=SC2086
-       "$DC_BIN" $FLAGS $SOURCES build/tests/brep_p1_advanced_threads.o $THREAD_LINK_FLAGS -of=build/tests/brep_p1_advanced ;;
+  ldc|dmd) # shellcheck disable=SC2086
+       "$DC_BIN" $FLAGS $SOURCES build/tests/brep_p1_advanced_threads.o $THREAD_LINK_FLAGS $SHIM_OBJS -of=build/tests/brep_p1_advanced ;;
   gdc) # shellcheck disable=SC2086
        "$DC_BIN" $FLAGS $SOURCES build/tests/brep_p1_advanced_threads.o $THREAD_LINK_FLAGS -o build/tests/brep_p1_advanced ;;
 esac

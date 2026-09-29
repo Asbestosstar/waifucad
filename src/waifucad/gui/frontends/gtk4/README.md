@@ -6,3 +6,7 @@ Implement a native bridge returning `GuiFrontendV1`.  Keep toolkit headers and C
 
 
 
+
+The D side is a thin wrapper over the shared toolkit-neutral core in
+`src/waifucad/gui/frontends/common/frontend.d`; behavioural fixes are made once there
+and propagate to every front-end.

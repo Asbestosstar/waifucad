@@ -1,3 +1,79 @@
+# WaifuCAD /opt Mesa Vulkan discovery patch
+
+This patch teaches GPU discovery to look for versioned Mesa installations
+under /opt so machines whose system stack lacks Vulkan can fall back to an
+/opt Mesa build with Vulkan support.
+
+Implemented:
+- `wc_gpu_opt_mesa_vulkan()` in `native/graphics/wc_gpu_probe.c`: scans the
+  /opt scan root (default `/opt`, overridable with `WC_OPT_MESA_ROOT` for
+  tests) for `*mesa*` trees, and picks one with Vulkan support — ICD
+  manifests under `share/vulkan/icd.d` and/or a `libvulkan.so.1` loader.
+  Preference: manifests + loader > manifests > loader, ties to the newer
+  (lexicographically later) version directory. A lavapipe-only filter mode is
+  available for software-Vulkan lookups.
+- `wc_gpu_probe()` now scans /opt: when the system has no Vulkan loader it
+  dlopens the /opt Mesa loader directly; when the loader exposes no devices
+  it configures `VK_ICD_FILENAMES` with the /opt Mesa ICD manifests (only if
+  unset) and retries instance creation. Findings are exposed via
+  `has_opt_mesa` / `opt_mesa_has_vulkan` / `opt_mesa_used`,
+  `opt_mesa_root` / `opt_mesa_icd`, and appended to the probe summary.
+- The GTK4 `--lavapipe` path falls back to the /opt Mesa lavapipe ICD when
+  no system lavapipe manifest exists.
+- `tests/gpu_probe.sh` gains a functional fake-/opt test (versioned trees,
+  no-Vulkan rejection); `tests/gpu_probe.c` gains /opt field consistency
+  assertions.
+
+Verification performed in this environment:
+- `tests/gpu_probe.sh` passes, including the fake-/opt version-selection and
+  no-Vulkan-rejection cases (run against the system llvmpipe stack).
+- Probe compiles clean with `-std=c11 -Wall -Wextra`.
+- All other Python/shell static tests unaffected.
+
+# WaifuCAD GUI/graphics abstraction patch
+
+This patch removes the Cocoa/GTK4 duplication and makes GUI front-ends and
+graphics back-ends pluggable, so a change made once propagates to every
+front-end and future ports can be added without copying code.
+
+Implemented:
+- `src/waifucad/gui/frontends/common/frontend.d` is now the single toolkit-neutral
+  front-end core: neutral `WcGui*` ABI structs, the callback table, and all
+  model/ribbon/sketch/feature-dialogue bridging previously duplicated between
+  the Cocoa and GTK4 front-ends (the two files were byte-identical modulo
+  prefixes).
+- `frontends/cocoa/frontend.d` and `frontends/gtk4/frontend.d` are thin
+  wrappers: native bridge symbols, shared-template instantiation, and
+  historical prefixed aliases for compatibility.
+- `native/gui/shared/wc_gui_abi.h` is the single native ABI; `wc_cocoa.h` and
+  `wc_gtk4.h` are compatibility shims typedef'ing the prefixed names.
+- `waifucad.gui.registry` / `waifucad.graphics.registry` hold the single
+  ordered selection tables; the selectors now walk the tables instead of
+  hard-coded if-chains. Adding a front-end/back-end = enum + capability flag +
+  one registry row + thin binding (documented in docs/GUI.md).
+- Descriptor stubs (GTK1-3, Qt2-6, Motif, Xlib) share `guiFrontendDescriptor`.
+- New regression contract: `tests/gui_shared_abi_static.py`.
+
+Verification performed in this environment:
+- D compile (`-betterC -wi -I=src`, DMD 2.109.1, no codegen): batch, GTK4 GUI
+  and Cocoa GUI targets all compile clean, zero warnings.
+- C ABI: both stubs and a cross-header consistency check compile and pass with
+  `-std=c11 -Wall -Wextra`.
+- All Python static tests pass, including the new `tests/gui_shared_abi_static.py`.
+- `tests/cocoa_gui_target.sh`, `cocoa_native_syntax.sh`, `gtk4_native_syntax.sh`,
+  `native_temp_files.sh`, `gpu_probe.sh`: pass.
+- `make_todos.sh`: pass; PROJECT_TREE.txt and todos.txt regenerated.
+
+Notes:
+- A full DMD betterC *link* fails identically before and after this patch:
+  DMD emits a druntime `_memsetDouble` helper in betterC codegen; the supported
+  LDC/GDC paths are unaffected.
+- `tests/ai_protocol_static.py`, `tests/getters_static.py`,
+  `tests/scheduler_static.py` and `tests/portability_layout.sh` fail on the
+  unmodified baseline too: they reference files absent from this tree
+  (docs/ARCHITECTURE.md, docs/AI_MODEL_INSPECTION.md, docs/MULTICORE.md,
+  build/arch/loongarch64-linux.sh).
+
 # WaifuCAD Cocoa / GTK4 parity patch
 
 This patch brings the Cocoa/AppKit front-end onto the same shared feature-dialogue and interactive-sketch contracts already used by GTK4, while keeping macOS independent of GTK4.

@@ -182,6 +182,33 @@ struct BRepMassProperties
     bool valid;
 }
 
+/* Exact inertia tensor at unit density. ixx/iyy/izz and pxy/pxz/pyz are the
+ * origin-frame moments and plain product integrals (pxy = ∫xy dV; the
+ * symmetric inertia matrix negates the products). The cmI../cmP.. fields are
+ * the same quantities in the centre-of-mass frame. principalMoments are the
+ * eigenvalues of the centre-of-mass tensor sorted ascending, principalAxes
+ * the matching unit eigenvectors. */
+struct BRepInertia
+{
+    double ixx;
+    double iyy;
+    double izz;
+    double pxy;
+    double pxz;
+    double pyz;
+    double cmIxx;
+    double cmIyy;
+    double cmIzz;
+    double cmPxy;
+    double cmPxz;
+    double cmPyz;
+    double volume;
+    BRepVec3 centreOfMass;
+    double[3] principalMoments;
+    BRepVec3[3] principalAxes;
+    bool valid;
+}
+
 enum BRepProfileSegmentKind : ubyte
 {
     line,
