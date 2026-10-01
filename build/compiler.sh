@@ -229,3 +229,248 @@ version_flag() {
         dmd) printf '%s\n' "-version=$ident" ;;
     esac
 }
+
+# --- Parallel builds ----------------------------------------------------------
+#
+# gdc has no built-in multi-threaded or incremental driver: handing it every
+# source in one command compiles the whole program on a single core, which is
+# painfully slow on SPARC and other many-slow-core hosts. build.sh therefore
+# compiles gdc modules one object per module and runs several compilers at once.
+# ldc and dmd keep their single-command path.
+
+# detect_job_count: WC_JOBS wins; otherwise the online processor count capped at
+# 16 (each gdc job can take a few hundred MiB). Works on Solaris, Linux, BSD, macOS.
+detect_job_count() {
+    jobs_value=${WC_JOBS:-}
+    case "$jobs_value" in
+        ''|*[!0-9]*|0) jobs_value= ;;
+        *) printf '%s\n' "$jobs_value"; return ;;
+    esac
+    jobs_value=$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)
+    case "$jobs_value" in ''|*[!0-9]*) jobs_value= ;; esac
+    if [ -z "$jobs_value" ] && command -v nproc >/dev/null 2>&1; then
+        jobs_value=$(nproc 2>/dev/null || true)
+    fi
+    case "$jobs_value" in ''|*[!0-9]*) jobs_value= ;; esac
+    if [ -z "$jobs_value" ] && command -v psrinfo >/dev/null 2>&1; then
+        jobs_value=$(psrinfo 2>/dev/null | wc -l | tr -d ' ')
+    fi
+    case "$jobs_value" in ''|*[!0-9]*) jobs_value= ;; esac
+    if [ -z "$jobs_value" ] && command -v sysctl >/dev/null 2>&1; then
+        jobs_value=$(sysctl -n hw.ncpu 2>/dev/null || true)
+    fi
+    case "$jobs_value" in ''|*[!0-9]*|0) jobs_value=1 ;; esac
+    if [ "$jobs_value" -gt 16 ]; then
+        jobs_value=16
+    fi
+    printf '%s\n' "$jobs_value"
+}
+
+# gdc_compile_objects OBJDIR SOURCE...: compile every D source to its own object
+# in OBJDIR, up to detect_job_count compilers at a time. Needs DC_BIN, BASE_FLAGS
+# and optionally DFLAGS / GDC_EXTRA_FLAGS. Sets GDC_OBJS to the object list.
+gdc_compile_objects() {
+    gco_dir="$1"
+    shift
+    mkdir -p "$gco_dir"
+    gco_jobs=$(detect_job_count)
+    gco_total=$#
+    GDC_OBJS=
+    gco_pids=
+    gco_running=0
+    gco_failed=0
+    gco_logs=
+    echo "gdc: compiling $gco_total modules with $gco_jobs parallel job(s)"
+    for gco_src in "$@"; do
+        gco_name=$(printf '%s' "${gco_src%.d}" | tr '/' '_')
+        gco_obj="$gco_dir/$gco_name.o"
+        gco_log="$gco_dir/$gco_name.log"
+        GDC_OBJS="$GDC_OBJS $gco_obj"
+        gco_logs="$gco_logs $gco_log"
+        rm -f "$gco_obj" "$gco_log"
+        (
+            # shellcheck disable=SC2086
+            "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} ${GDC_EXTRA_FLAGS:-} -c "$gco_src" -o "$gco_obj" > "$gco_log" 2>&1
+        ) &
+        gco_pids="$gco_pids $!"
+        gco_running=$((gco_running + 1))
+        if [ "$gco_running" -ge "$gco_jobs" ]; then
+            gco_first=${gco_pids# }
+            gco_first=${gco_first%% *}
+            gco_pids=${gco_pids#" $gco_first"}
+            wait "$gco_first" || gco_failed=1
+            gco_running=$((gco_running - 1))
+        fi
+    done
+    for gco_pid in $gco_pids; do
+        wait "$gco_pid" || gco_failed=1
+    done
+    for gco_log in $gco_logs; do
+        if [ -s "$gco_log" ]; then
+            cat "$gco_log" >&2
+        fi
+    done
+    if [ "$gco_failed" != 0 ]; then
+        echo "gdc: one or more modules failed to compile (see messages above)." >&2
+        exit 1
+    fi
+}
+
+# --- GTK4 discovery -------------------------------------------------------------
+#
+# pkg-config is the preferred route, but historical hosts (Solaris, minimal
+# distributions) often have GTK4 headers and libraries under /usr/include/gtk-4.0
+# and /usr/lib without a working gtk4.pc, a pkg-config binary, or a PKG_CONFIG_PATH
+# that reaches them. detect_gtk4 tries, in order:
+#   1. GTK4_CFLAGS / GTK4_LIBS from the environment (explicit override);
+#   2. pkg-config, then pkg-config again with the standard pkgconfig directories
+#      under the usual prefixes (WC_GTK4_PREFIX first) added to PKG_CONFIG_PATH;
+#   3. a header/library scan of those prefixes that assembles the flags by hand.
+# It sets WC_HAVE_GTK4, GTK4_CFLAGS_RAW, GTK4_LIBS_RAW, GTK4_VERSION, GTK4_METHOD
+# and, on failure, GTK4_WHY.
+
+gtk4_prefixes() {
+    # shellcheck disable=SC2086
+    printf '%s\n' ${WC_GTK4_PREFIX:-} /usr /usr/local /opt/csw /opt/local /usr/gnu /opt/gtk4 /opt/gnome /opt/homebrew
+}
+
+# 64-bit library directories first: WaifuCAD never links 32-bit libraries.
+gtk4_libsubs() {
+    printf '%s\n' lib/64 lib/sparcv9 lib/amd64 lib/64-bit lib64 "lib/$(uname -m 2>/dev/null || echo unknown)-linux-gnu" lib
+}
+
+gtk4_pkgconfig_dirs() {
+    gpd_out=
+    for gpd_prefix in $(gtk4_prefixes); do
+        gpd_found=0
+        for gpd_sub in $(gtk4_libsubs) share; do
+            if [ -f "$gpd_prefix/$gpd_sub/pkgconfig/gtk4.pc" ]; then
+                gpd_found=1
+            fi
+        done
+        if [ "$gpd_found" = 1 ]; then
+            for gpd_sub in $(gtk4_libsubs) share; do
+                if [ -d "$gpd_prefix/$gpd_sub/pkgconfig" ]; then
+                    gpd_out="${gpd_out:+$gpd_out:}$gpd_prefix/$gpd_sub/pkgconfig"
+                fi
+            done
+        fi
+    done
+    printf '%s\n' "$gpd_out"
+}
+
+gtk4_probe_compiles() {
+    mkdir -p "$WC_PROBE_DIR"
+    cat > "$WC_PROBE_DIR/gtk4.c" <<'EOP'
+#include <gtk/gtk.h>
+int main(void) { return GTK_MAJOR_VERSION == 4 ? 0 : 1; }
+EOP
+    # shellcheck disable=SC2086
+    "$CC_BIN" ${CFLAGS:-} -std=c11 $1 -c "$WC_PROBE_DIR/gtk4.c" -o "$WC_PROBE_DIR/gtk4.o" >"$WC_PROBE_DIR/gtk4.log" 2>&1
+}
+
+detect_gtk4() {
+    WC_HAVE_GTK4=0
+    GTK4_CFLAGS_RAW=
+    GTK4_LIBS_RAW=
+    GTK4_VERSION=unknown
+    GTK4_METHOD=
+    GTK4_WHY=
+
+    if [ -n "${GTK4_CFLAGS:-}" ]; then
+        WC_HAVE_GTK4=1
+        GTK4_CFLAGS_RAW=$GTK4_CFLAGS
+        GTK4_LIBS_RAW=${GTK4_LIBS:--lgtk-4}
+        GTK4_METHOD="GTK4_CFLAGS/GTK4_LIBS override"
+        return 0
+    fi
+
+    dg_pc=
+    for dg_candidate in pkg-config pkgconf; do
+        if command -v "$dg_candidate" >/dev/null 2>&1; then
+            dg_pc=$dg_candidate
+            break
+        fi
+    done
+
+    if [ -n "$dg_pc" ]; then
+        if ! "$dg_pc" --exists gtk4 >/dev/null 2>&1; then
+            dg_extra=$(gtk4_pkgconfig_dirs)
+            if [ -n "$dg_extra" ]; then
+                dg_old_set=${PKG_CONFIG_PATH+set}
+                dg_old=${PKG_CONFIG_PATH:-}
+                PKG_CONFIG_PATH="$dg_extra${dg_old:+:$dg_old}"
+                export PKG_CONFIG_PATH
+                if ! "$dg_pc" --exists gtk4 >/dev/null 2>&1; then
+                    GTK4_WHY=$("$dg_pc" --print-errors --exists gtk4 2>&1 | tr '\n' ' ' || true)
+                    if [ -n "$dg_old_set" ]; then PKG_CONFIG_PATH=$dg_old; else unset PKG_CONFIG_PATH; fi
+                fi
+            fi
+        fi
+        if "$dg_pc" --exists gtk4 >/dev/null 2>&1; then
+            GTK4_CFLAGS_RAW=$("$dg_pc" --cflags gtk4)
+            GTK4_LIBS_RAW=$("$dg_pc" --libs gtk4)
+            GTK4_VERSION=$("$dg_pc" --modversion gtk4)
+            GTK4_METHOD=$dg_pc
+            WC_HAVE_GTK4=1
+            return 0
+        fi
+        if [ -z "$GTK4_WHY" ]; then
+            GTK4_WHY=$("$dg_pc" --print-errors --exists gtk4 2>&1 | tr '\n' ' ' || true)
+        fi
+    else
+        GTK4_WHY="no pkg-config or pkgconf in PATH"
+    fi
+
+    # Header/library scan.
+    for dg_prefix in $(gtk4_prefixes); do
+        [ -f "$dg_prefix/include/gtk-4.0/gtk/gtk.h" ] || continue
+        dg_libdir=
+        for dg_sub in $(gtk4_libsubs); do
+            for dg_lib in "$dg_prefix/$dg_sub"/libgtk-4.so*; do
+                if [ -e "$dg_lib" ]; then
+                    dg_libdir="$dg_prefix/$dg_sub"
+                    break 2
+                fi
+            done
+        done
+        if [ -z "$dg_libdir" ]; then
+            GTK4_WHY="$GTK4_WHY; found $dg_prefix/include/gtk-4.0 but no 64-bit libgtk-4.so under $dg_prefix"
+            continue
+        fi
+
+        dg_cflags="-I$dg_prefix/include/gtk-4.0"
+        for dg_inc in glib-2.0 pango-1.0 harfbuzz cairo gdk-pixbuf-2.0 graphene-1.0 fribidi freetype2 libpng16 pixman-1; do
+            if [ -d "$dg_prefix/include/$dg_inc" ]; then
+                dg_cflags="$dg_cflags -I$dg_prefix/include/$dg_inc"
+            fi
+        done
+        # glibconfig.h and graphene-config.h live in per-ABI directories.
+        for dg_sub in $(gtk4_libsubs); do
+            for dg_cfg in glib-2.0/include graphene-1.0/include; do
+                if [ -d "$dg_prefix/$dg_sub/$dg_cfg" ]; then
+                    dg_cflags="$dg_cflags -I$dg_prefix/$dg_sub/$dg_cfg"
+                fi
+            done
+        done
+        dg_libs="-L$dg_libdir -Wl,-R,$dg_libdir -lgtk-4"
+        for dg_name in pangocairo-1.0 pango-1.0 harfbuzz gdk_pixbuf-2.0 cairo-gobject cairo graphene-1.0 gio-2.0 gobject-2.0 glib-2.0; do
+            for dg_lib in "$dg_libdir/lib$dg_name.so"*; do
+                if [ -e "$dg_lib" ]; then
+                    dg_libs="$dg_libs -l$dg_name"
+                    break
+                fi
+            done
+        done
+        if gtk4_probe_compiles "$dg_cflags"; then
+            GTK4_CFLAGS_RAW=$dg_cflags
+            GTK4_LIBS_RAW=$dg_libs
+            GTK4_VERSION="headers in $dg_prefix/include/gtk-4.0"
+            GTK4_METHOD="header scan"
+            WC_HAVE_GTK4=1
+            return 0
+        fi
+        GTK4_WHY="$GTK4_WHY; headers in $dg_prefix/include/gtk-4.0 did not compile (see $WC_PROBE_DIR/gtk4.log; set GTK4_CFLAGS/GTK4_LIBS to override)"
+    done
+    return 0
+}

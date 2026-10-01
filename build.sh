@@ -20,6 +20,10 @@ DC_BIN=$(pick_compiler)
 DC_KIND=$(compiler_kind "$DC_BIN")
 CC_BIN=$(pick_c_compiler)
 BASE_FLAGS=$(betterc_flags "$DC_KIND")
+if [ "${WC_DEBUG:-0}" = 1 ]; then
+    # Debug symbols (and no optimisation) so a crash can be located with gdb/dbx.
+    BASE_FLAGS="$BASE_FLAGS -g"
+fi
 mkdir -p bin build/obj
 
 # Probe optional system libraries (see build/compiler.sh). Nothing here is a
@@ -181,12 +185,6 @@ src/waifucad/render/raytrace.d'
 
 
 
-gtk4_d_link_flags() {
-    gtk_libs=$(pkg-config --libs gtk4)
-    # shellcheck disable=SC2086
-    d_link_flags "$DC_KIND" $gtk_libs
-}
-
 build_native_gpu_probe() {
     case "$GPU_PROBE_IMPL" in
         dlopen) gpu_probe_source=native/graphics/wc_gpu_probe.c ;;
@@ -199,18 +197,20 @@ build_native_gpu_probe() {
 build_native_gtk4() {
     build_native_gpu_probe
     GTK4_LINK_FLAGS=
-    if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists gtk4; then
-        gtk_cflags=$(pkg-config --cflags gtk4)
+    detect_gtk4
+    if [ "$WC_HAVE_GTK4" = 1 ]; then
         # shellcheck disable=SC2086
-        "$CC_BIN" ${CFLAGS:-} -std=c11 -Wall -Wextra -fPIC $gtk_cflags \
+        "$CC_BIN" ${CFLAGS:-} -std=c11 -Wall -Wextra -fPIC $GTK4_CFLAGS_RAW \
             -Inative/gui/gtk4 -Inative/graphics \
             -c native/gui/gtk4/wc_gtk4.c -o build/obj/wc_gtk4.o
-        GTK4_LINK_FLAGS=$(gtk4_d_link_flags)
-        echo "GTK4 native frontend: enabled ($(pkg-config --modversion gtk4))"
+        # shellcheck disable=SC2086
+        GTK4_LINK_FLAGS=$(d_link_flags "$DC_KIND" $GTK4_LIBS_RAW)
+        echo "GTK4 native frontend: enabled ($GTK4_VERSION via $GTK4_METHOD)"
     else
         "$CC_BIN" ${CFLAGS:-} -std=c11 -Wall -Wextra -fPIC \
             -Inative/gui/gtk4 -c native/gui/gtk4/wc_gtk4_stub.c -o build/obj/wc_gtk4.o
-        echo "GTK4 native frontend: disabled (pkg-config gtk4 not found)" >&2
+        echo "GTK4 native frontend: disabled (GTK4 not found${GTK4_WHY:+: $GTK4_WHY})" >&2
+        echo "  Set WC_GTK4_PREFIX=/path (containing include/gtk-4.0), PKG_CONFIG_PATH, or GTK4_CFLAGS and GTK4_LIBS." >&2
     fi
 }
 
@@ -265,6 +265,46 @@ build_native_threads() {
         -Inative/threads -c "$thread_source" -o build/obj/wc_threads.o
 }
 
+# gdc compiles one object per module, several at a time (see gdc_compile_objects
+# in build/compiler.sh), and the shared COMMON objects are built once for both
+# the batch and GUI executables. WC_JOBS overrides the parallel job count and
+# WC_GDC_SPLIT=0 restores the historical single-command build.
+GDC_COMMON_OBJS=
+GDC_COMMON_BUILT=0
+GDC_SPLIT=${WC_GDC_SPLIT:-1}
+
+gdc_build_common() {
+    if [ "$GDC_COMMON_BUILT" = 1 ]; then
+        return
+    fi
+    GDC_EXTRA_FLAGS=
+    # shellcheck disable=SC2086
+    gdc_compile_objects build/obj/d $COMMON
+    GDC_COMMON_OBJS=$GDC_OBJS
+    GDC_COMMON_BUILT=1
+}
+
+# gdc_link_app OUTPUT SOURCES... -- LINK-INPUTS...: compile the app sources, link
+# them with the shared COMMON objects and the extra link inputs.
+gdc_link_app() {
+    output="$1"
+    shift
+    app_flags=${GDC_EXTRA_FLAGS:-}
+    app_sources=
+    while [ "$#" -gt 0 ] && [ "$1" != -- ]; do
+        app_sources="$app_sources $1"
+        shift
+    done
+    shift
+    gdc_build_common
+    GDC_EXTRA_FLAGS=$app_flags
+    # shellcheck disable=SC2086
+    gdc_compile_objects build/obj/d $app_sources
+    app_objs=$GDC_OBJS
+    # shellcheck disable=SC2086
+    "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} $GDC_COMMON_OBJS $app_objs "$@" -o "$output"
+}
+
 build_one() {
     output="$1"
     main="$2"
@@ -272,7 +312,14 @@ build_one() {
     # shellcheck disable=SC2086
     case "$DC_KIND" in
         ldc|dmd) "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} "$@" $COMMON "$main" build/obj/wc_threads.o build/obj/wc_temp.o $SHIM_OBJS ${LDFLAGS:-} $THREAD_LINK_FLAGS $LIBM_D_FLAGS -of="$output" ;;
-        gdc) "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} "$@" $COMMON "$main" build/obj/wc_threads.o build/obj/wc_temp.o ${LDFLAGS:-} $THREAD_LINK_FLAGS $LIBM_D_FLAGS -o "$output" ;;
+        gdc)
+            if [ "$GDC_SPLIT" = 1 ]; then
+                GDC_EXTRA_FLAGS="$*"
+                gdc_link_app "$output" "$main" -- build/obj/wc_threads.o build/obj/wc_temp.o ${LDFLAGS:-} $THREAD_LINK_FLAGS $LIBM_D_FLAGS
+            else
+                "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} "$@" $COMMON "$main" build/obj/wc_threads.o build/obj/wc_temp.o ${LDFLAGS:-} $THREAD_LINK_FLAGS $LIBM_D_FLAGS -o "$output"
+            fi
+            ;;
     esac
 }
 
@@ -298,6 +345,17 @@ build_gui() {
                     -of=bin/waifucad-gui
                 ;;
             gdc)
+                if [ "$GDC_SPLIT" = 1 ]; then
+                    GDC_EXTRA_FLAGS=$(version_flag "$DC_KIND" WaifuCadGuiCocoa)
+                    # shellcheck disable=SC2086
+                    gdc_link_app bin/waifucad-gui \
+                        src/waifucad/gui/frontends/common/frontend.d \
+                        src/waifucad/gui/frontends/cocoa/frontend.d \
+                        src/apps/waifucad_gui.d \
+                        -- build/obj/wc_threads.o build/obj/wc_temp.o \
+                        build/obj/wc_cocoa.o build/obj/wc_gpu_probe.o \
+                        ${LDFLAGS:-} $THREAD_LINK_FLAGS $COCOA_LINK_FLAGS $LIBDL_RAW $LIBM_RAW
+                else
                 # shellcheck disable=SC2086
                 "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} $(version_flag "$DC_KIND" WaifuCadGuiCocoa) \
                     $COMMON \
@@ -308,6 +366,7 @@ build_gui() {
                     build/obj/wc_cocoa.o build/obj/wc_gpu_probe.o \
                     ${LDFLAGS:-} $THREAD_LINK_FLAGS $COCOA_LINK_FLAGS $LIBDL_RAW $LIBM_RAW \
                     -o bin/waifucad-gui
+                fi
                 ;;
         esac
         return
@@ -327,6 +386,17 @@ build_gui() {
                 -of=bin/waifucad-gui
             ;;
         gdc)
+            if [ "$GDC_SPLIT" = 1 ]; then
+                GDC_EXTRA_FLAGS=
+                # shellcheck disable=SC2086
+                gdc_link_app bin/waifucad-gui \
+                    src/waifucad/gui/frontends/common/frontend.d \
+                    src/waifucad/gui/frontends/gtk4/frontend.d \
+                    src/apps/waifucad_gui.d \
+                    -- build/obj/wc_threads.o build/obj/wc_temp.o \
+                    build/obj/wc_gtk4.o build/obj/wc_gpu_probe.o \
+                    ${LDFLAGS:-} $THREAD_LINK_FLAGS $GTK4_LINK_FLAGS $LIBDL_RAW $LIBM_RAW
+            else
             # shellcheck disable=SC2086
             "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} \
                 $COMMON \
@@ -337,6 +407,7 @@ build_gui() {
                 build/obj/wc_gtk4.o build/obj/wc_gpu_probe.o \
                 ${LDFLAGS:-} $THREAD_LINK_FLAGS $GTK4_LINK_FLAGS $LIBDL_RAW $LIBM_RAW \
                 -o bin/waifucad-gui
+            fi
             ;;
     esac
 }
@@ -344,9 +415,32 @@ build_gui() {
 build_native_threads
 build_native_temp_files
 
+# A binary that was built but dies at start-up is worth saying so loudly: the
+# build host is often not the place anyone looks first (e.g. SIGILL on SPARC).
+verify_batch_starts() {
+    if [ "${WC_SKIP_SELFTEST:-0}" = 1 ] || [ ! -x bin/waifucad-batch ]; then
+        return 0
+    fi
+    selftest_rc=0
+    ./bin/waifucad-batch --help >/dev/null 2>&1 || selftest_rc=$?
+    case "$selftest_rc" in
+        126|127) ;; # cross-compiled or not runnable here
+        0) echo "Self-test: bin/waifucad-batch --help ran successfully." ;;
+        *)
+            if [ "$selftest_rc" -gt 128 ]; then
+                echo "WARNING: bin/waifucad-batch was killed by signal $((selftest_rc - 128)) on start-up (SIGILL is 4, SIGSEGV is 11, SIGBUS is 10)." >&2
+                echo "  Rebuild with WC_DEBUG=1 ./build.sh batch and run it under gdb or dbx to find the faulting instruction." >&2
+            else
+                echo "WARNING: bin/waifucad-batch --help exited with status $selftest_rc." >&2
+            fi
+            ;;
+    esac
+}
+
 case "$MODE" in
     batch)
         build_one bin/waifucad-batch src/apps/waifucad_batch.d
+        verify_batch_starts
         ;;
     gui)
         build_gui
@@ -354,13 +448,10 @@ case "$MODE" in
     all)
         build_one bin/waifucad-batch src/apps/waifucad_batch.d
         build_gui
+        verify_batch_starts
         ;;
     *)
         echo "Usage: ./build.sh [batch|gui|all|clean]" >&2
         exit 2
         ;;
 esac
-
-
-
-
