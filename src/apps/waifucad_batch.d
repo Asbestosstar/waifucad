@@ -1,6 +1,6 @@
 module apps.waifucad_batch;
 
-import core.stdc.stdio : fprintf, stdout, stderr;
+import core.stdc.stdio : fprintf, fflush, stdout, stderr;
 import core.stdc.stdlib : strtoul, strtod;
 import core.stdc.string : strcmp;
 import waifucad.kernel.model : Model;
@@ -22,6 +22,19 @@ import waifucad.render.png : WC_PNG_MAX_DIMENSION;
 import waifucad.render.softshot : ScreenshotOptions, renderModelScreenshot, WC_RENDER_FLAT, WC_RENDER_RAY;
 
 private enum uint WC_BATCH_MAX_SHOTS = 8;
+
+/*
+ * The document, journal, PMI store and script context are several MiB in
+ * total.  They live in static storage rather than in main's stack frame so the
+ * frame stays small: a huge frame is reserved by the prologue even for the
+ * --help early exit, which is fragile on hosts with small main-thread stacks
+ * and non-x86 ABIs (for example SPARC register-window targets).
+ */
+private __gshared Model gModel;
+private __gshared Journal gJournal;
+private __gshared PmiStore gPmiStore;
+private __gshared ScriptContext gContext;
+private __gshared UndoStack gUndoStack;
 
 private void usage() nothrow @nogc
 {
@@ -125,6 +138,17 @@ private bool parseShotSize(const(char)* text, ScreenshotOptions* options) nothro
 
 extern(C) int main(int argc, char** argv)
 {
+    // Answer --help before touching any other state.
+    foreach (argIndex; 1 .. argc)
+    {
+        if (strcmp(argv[argIndex], "--help".ptr) == 0 || strcmp(argv[argIndex], "-h".ptr) == 0)
+        {
+            usage();
+            fflush(stdout);
+            return 0;
+        }
+    }
+
     const(char)* scriptPath = null;
     const(char)* journalInputPath = null;
     const(char)* scadImportPath = null;
@@ -302,22 +326,22 @@ extern(C) int main(int argc, char** argv)
         (commandText!is null?1u:0u)+(repl?1u:0u);
     if(inputCount!=1){fprintf(stderr,"Choose exactly one input: --script, --journal-in, --import-openscad, --command, or --repl.\n");usage();return 2;}
 
-    Model model; model.initialise("untitled".ptr); model.workerCount=workerCount;
-    Journal journal;
+    auto model=&gModel; model.initialise("untitled".ptr); model.workerCount=workerCount;
+    auto journal=&gJournal;
     if(journalPath!is null && !journal.start(journalPath)){fprintf(stderr,"Could not create journal: %s\n",journalPath);return 3;}
-    PmiStore pmiStore; pmiStore.clear();
-    ScriptContext context; context.model=&model; context.journal=&journal; context.recordCommands=journalPath!is null; context.runtime.initialise(); context.pmi=&pmiStore;
-    UndoStack undoStack; context.undo=&undoStack;
+    auto pmiStore=&gPmiStore; pmiStore.clear();
+    auto context=&gContext; context.model=model; context.journal=journal; context.recordCommands=journalPath!is null; context.runtime.initialise(); context.pmi=pmiStore;
+    auto undoStack=&gUndoStack; context.undo=undoStack;
     if(undoLog||repl||journalInputPath!is null) undoStack.enable();
 
     int result=0;
-    if(scriptPath!is null) result=runSclScript(&context,scriptPath);
-    else if(journalInputPath!is null) result=runSclScript(&context,journalInputPath);
-    else if(commandText!is null) result=executeLine(&context,commandText);
-    else if(repl) result=runSclRepl(&context,true);
-    else result=importOpenScad(&model,scadImportPath,importName,&importOptions);
+    if(scriptPath!is null) result=runSclScript(context,scriptPath);
+    else if(journalInputPath!is null) result=runSclScript(context,journalInputPath);
+    else if(commandText!is null) result=executeLine(context,commandText);
+    else if(repl) result=runSclRepl(context,true);
+    else result=importOpenScad(model,scadImportPath,importName,&importOptions);
 
-    if(result==0){auto backend=waifuBRepBackend();result=backend.recompute(&model);}
+    if(result==0){auto backend=waifuBRepBackend();result=backend.recompute(model);}
     if(result==0 && scadExportPath!is null)
     {
         if(exportOptions.exportScope==OpenScadExportScope.namedFeature && exportOptions.featureName.length==0)
@@ -325,14 +349,14 @@ extern(C) int main(int argc, char** argv)
             if(scadImportPath!is null) exportOptions.featureName.set(importName);
             else exportOptions.exportScope=OpenScadExportScope.allDumbBodies;
         }
-        result=exportOpenScad(&model,scadExportPath,&exportOptions);
+        result=exportOpenScad(model,scadExportPath,&exportOptions);
     }
 
     if (result == 0 && shotCount > 0)
     {
         foreach (shotIndex; 0 .. shotCount)
         {
-            result = renderModelScreenshot(&model, shotPaths[shotIndex].ptr(), &shots[shotIndex]);
+            result = renderModelScreenshot(model, shotPaths[shotIndex].ptr(), &shots[shotIndex]);
             if (result != 0)
             {
                 fprintf(stderr, "Screenshot failed (%d): %s\n", result, shotPaths[shotIndex].ptr());

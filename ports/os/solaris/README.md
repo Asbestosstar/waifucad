@@ -12,3 +12,9 @@ The BetterC multicore layer uses the portable `wc_threads.h` ABI. The initial So
 
 
 
+
+## Build notes (gdc, GTK4, start-up crashes)
+
+- `gdc` builds one object per D module and runs several compilers at once (the online processor count, capped at 16). Set `WC_JOBS=N` to override or `WC_GDC_SPLIT=0` for the old single-command build. `ldc2` and `dmd` still use their own single-command path.
+- GTK4 is found through `pkg-config` first, then `pkg-config` with the usual `pkgconfig` directories added (`/usr/lib/64/pkgconfig`, `/usr/lib/amd64/pkgconfig`, `/usr/lib/sparcv9/pkgconfig`, `/usr/share/pkgconfig`, ...), then by scanning `<prefix>/include/gtk-4.0` and the 64-bit library directories (`lib/64`, `lib/sparcv9`, `lib/amd64`, `lib`). Use `WC_GTK4_PREFIX=/path`, or set `GTK4_CFLAGS` and `GTK4_LIBS` explicitly. When GTK4 is not found, the build prints why.
+- `./build.sh` runs `bin/waifucad-batch --help` after building and warns if it dies on a signal. For a crash such as SIGILL, build with `WC_DEBUG=1 ./build.sh batch` and run `gdb bin/waifucad-batch` or `dbx bin/waifucad-batch`, then report the faulting function (`where`) and instruction (`x/i $pc`).

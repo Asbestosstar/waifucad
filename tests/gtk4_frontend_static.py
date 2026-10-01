@@ -131,7 +131,8 @@ for icon in sorted(icon_names):
     assert '<svg' in path.read_text()[:256]
 
 assert (root / 'waifus/nightcore.png').is_file()
-assert 'pkg-config --exists gtk4' in build
+compiler_sh = (root / 'build/compiler.sh').read_text()
+assert 'detect_gtk4' in build and 'pkg-config' in compiler_sh and 'include/gtk-4.0' in compiler_sh
 assert 'wc_gtk4_stub.c' in build
 assert '- [x] Compile and smoke-test with LDC on Linux x86-64.' in agents
 print(f'GTK4 native frontend static contract passed ({len(icon_names)} SVG icons checked).')

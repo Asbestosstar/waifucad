@@ -111,6 +111,8 @@ build/os/solaris.sh
 build/os/tru64.sh
 build/os/webassembly.sh
 build/os/zos.sh
+build/probes/gtk4.c
+build/probes/gtk4.log
 build/probes/libdl.c
 build/probes/libm.c
 build/probes/probe.bin
