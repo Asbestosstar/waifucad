@@ -478,6 +478,10 @@ int executeGetter(ScriptContext* context, Tokens* tokens) nothrow @nogc
         return setNumber(context,tokens,cast(double)context.model.exactGeometry.nurbsSurfaceCount)?0:665;
     if (strcmp(command, "get_topology_lineage_count".ptr) == 0)
         return setNumber(context,tokens,cast(double)context.model.exactGeometry.lineageCount)?0:666;
+    if (strcmp(command, "get_undo_depth".ptr) == 0)
+        return setNumber(context, tokens, context.undo is null ? 0.0 : cast(double)context.undo.undoDepth()) ? 0 : 1020;
+    if (strcmp(command, "get_redo_depth".ptr) == 0)
+        return setNumber(context, tokens, context.undo is null ? 0.0 : cast(double)context.undo.redoDepth()) ? 0 : 1021;
     if (strcmp(command, "get_model_worker_count".ptr) == 0)
         return setNumber(context, tokens, cast(double)context.model.effectiveWorkerCount()) ? 0 : 503;
     if (strcmp(command, "get_model_requested_worker_count".ptr) == 0)

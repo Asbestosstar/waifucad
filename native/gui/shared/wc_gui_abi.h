@@ -205,7 +205,14 @@ typedef int (*WcGuiSketchAddCircleFn)(void *user_data, uint32_t sketch_id, doubl
 typedef int (*WcGuiSketchAddRectangleFn)(void *user_data, uint32_t sketch_id, double x, double y, double width, double height);
 typedef int (*WcGuiFeatureActionFn)(void *user_data, uint32_t feature_id, int action);
 typedef int (*WcGuiFeatureReorderFn)(void *user_data, uint32_t feature_id, uint32_t target_feature_id, int after_target);
+/* Ribbon command search. `matches` is a caller-owned buffer of at most
+ * `capacity` WcGuiRibbonCommand slots; returns the number written. The D
+ * side owns matching so every toolkit shares one ranking implementation.
+ * Appended at the end of the struct for front-end/toolkit compatibility. */
+typedef size_t (*WcGuiRibbonSearchFn)(void *user_data, const char *query,
+                                      WcGuiRibbonCommand *matches, size_t capacity);
 
+typedef const char *(*WcGuiSclErrorTextFn)(void *user_data, int code);
 typedef struct WcGuiCallbacks {
     WcGuiSubmitCommandFn submit_command;
     WcGuiChooseSectionFn choose_section;
@@ -232,6 +239,8 @@ typedef struct WcGuiCallbacks {
     WcGuiSketchAddRectangleFn sketch_add_rectangle;
     WcGuiFeatureActionFn feature_action;
     WcGuiFeatureReorderFn feature_reorder;
+    WcGuiRibbonSearchFn ribbon_search;
+    WcGuiSclErrorTextFn scl_error_text;
 } WcGuiCallbacks;
 
 /* Every front-end native bridge exports this pair of entry points under its

@@ -15,6 +15,8 @@ persistent and are never handed out as stable references.
 - `get_model_name` → string
 - `get_parameter_count` → number
 - `get_feature_count` → number
+- `get_undo_depth` → number (retained undoable transactions; 0 when the undo log is disabled)
+- `get_redo_depth` → number (transactions available to redo)
 - `get_model_worker_count` → number
 - `get_model_exact_solid_count` → number
 - `get_model_mesh_count` → number

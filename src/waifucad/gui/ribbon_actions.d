@@ -16,6 +16,14 @@ const(char)* ribbonCommandTemplate(const(char)* commandId) nothrow @nogc
     if (commandId is null) return "".ptr;
 
     if (strcmp(commandId, "modelling.sketch".ptr) == 0) return "sketch(:new_sketch, :XY)".ptr;
+    if (strcmp(commandId, "modelling.new_part".ptr) == 0) return "# New Part is handled natively (confirmation + model(:new_part)).".ptr;
+    if (strcmp(commandId, "modelling.open_part".ptr) == 0) return "# Open Part is handled natively (script include chooser).".ptr;
+    if (strcmp(commandId, "modelling.save_part".ptr) == 0) return "# Save Part is handled natively (journal chooser).".ptr;
+    if (strcmp(commandId, "modelling.import_step".ptr) == 0) return "# STEP import is planned.".ptr;
+    if (strcmp(commandId, "modelling.import_jt".ptr) == 0) return "# JT import is planned.".ptr;
+    if (strcmp(commandId, "modelling.export_step".ptr) == 0) return "# STEP export is planned.".ptr;
+    if (strcmp(commandId, "modelling.export_jt".ptr) == 0) return "# JT export is planned.".ptr;
+    if (strcmp(commandId, "modelling.exit".ptr) == 0) return "# Exit is handled natively.".ptr;
     if (strcmp(commandId, "modelling.extrude".ptr) == 0) return "extrude(:new_extrude, :profile, 10.mm)".ptr;
     if (strcmp(commandId, "modelling.revolve".ptr) == 0) return "revolve(:new_revolve, :profile, 360.deg)".ptr;
     if (strcmp(commandId, "modelling.sweep".ptr) == 0) return "sweep(:new_sweep, :profile, :path)".ptr;

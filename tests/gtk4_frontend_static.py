@@ -28,9 +28,21 @@ for token in [
     'gtk4FeatureRows', 'gtk4SectionEntries', 'gtk4ActiveRibbon', 'gtk4RibbonTemplate',
     'gtk4BodyRows', 'gtk4CsysRows',
     'gtk4BeginNewSketch', 'gtk4EditSketch', 'gtk4FinishSketch', 'gtk4SketchGeometryRows', 'gtk4PlanarFaceRows',
-    'gtk4SketchAddLine', 'gtk4SketchAddCircle', 'gtk4SketchAddRectangle', 'gtk4FeatureAction', 'gtk4FeatureReorder'
+    'gtk4SketchAddLine', 'gtk4SketchAddCircle', 'gtk4SketchAddRectangle', 'gtk4FeatureAction', 'gtk4FeatureReorder',
+    'guiRibbonSearch',
 ]:
     assert token in frontend
+assert 'ribbonSearch' in shared_frontend
+# NX-compact ribbon metrics and the shared ribbon command search box.
+for token in ['ribbon_search', 'ribbon_search_entry', 'ribbon_search_popover',
+              'ribbon_search_update', 'ribbon_search_activate_cb', 'gtk_search_entry_new',
+              'wc-ribbon-search-row']:
+    assert token in native, f'GTK4 native bridge is missing {token}'
+assert 'gtk_widget_set_size_request(state.ribbon_scroller, -1, 68);' in native
+# NX-style menu bar and compact status readout.
+for token in ['build_menu_bar', 'wc-menubar', 'menu_action_clicked_cb',
+              'WC_MENU_TOGGLE_COMPACT', 'cursor_status', 'GDK_KEY_slash']:
+    assert token in native, f'GTK4 native bridge is missing {token}'
 for token in [
     'WcGtk4FeatureRow', 'WcGtk4BodyRow', 'WcGtk4CsysRow', 'WcGtk4SectionEntry', 'WcGtk4RibbonSnapshot', 'WcGtk4RibbonTemplateFn',
     'WcGtk4SketchGeometryRow', 'WcGtk4BeginNewSketchFn', 'WcGtk4EditSketchFn',
@@ -123,3 +135,7 @@ assert 'pkg-config --exists gtk4' in build
 assert 'wc_gtk4_stub.c' in build
 assert '- [x] Compile and smoke-test with LDC on Linux x86-64.' in agents
 print(f'GTK4 native frontend static contract passed ({len(icon_names)} SVG icons checked).')
+
+# NX menu bar + error popup tokens.
+for token in ['build_menu_bar', 'report_scl_error', 'scl_error_text', 'GDK_KEY_slash', 'cursor_status']:
+    assert token in native, f'GTK4 native bridge is missing {token}'

@@ -2,6 +2,7 @@
 
 Generated from the current source tree by `./make_todos.sh`. Build outputs and generated AI context are excluded.
 
+.DS_Store
 .gitignore
 AGENTS.MD
 HANDOFF_PROMPT.md
@@ -19,17 +20,24 @@ assets/icons/cmd_command.svg
 assets/icons/cmd_datum_axis.svg
 assets/icons/cmd_datum_csys.svg
 assets/icons/cmd_datum_plane.svg
+assets/icons/cmd_exit.svg
+assets/icons/cmd_export_jt.svg
 assets/icons/cmd_export_scad.svg
+assets/icons/cmd_export_step.svg
 assets/icons/cmd_extrude.svg
 assets/icons/cmd_fillet.svg
 assets/icons/cmd_finish_sketch.svg
 assets/icons/cmd_import_body.svg
+assets/icons/cmd_import_jt.svg
 assets/icons/cmd_import_scad.svg
+assets/icons/cmd_import_step.svg
 assets/icons/cmd_intersect.svg
 assets/icons/cmd_line.svg
 assets/icons/cmd_loft.svg
 assets/icons/cmd_mass.svg
 assets/icons/cmd_measure.svg
+assets/icons/cmd_new.svg
+assets/icons/cmd_open.svg
 assets/icons/cmd_pmi_angular.svg
 assets/icons/cmd_pmi_balloon.svg
 assets/icons/cmd_pmi_datum.svg
@@ -50,6 +58,7 @@ assets/icons/cmd_pmi_weld.svg
 assets/icons/cmd_record.svg
 assets/icons/cmd_rectangle.svg
 assets/icons/cmd_revolve.svg
+assets/icons/cmd_save.svg
 assets/icons/cmd_script.svg
 assets/icons/cmd_shell.svg
 assets/icons/cmd_sketch.svg
@@ -64,6 +73,7 @@ assets/icons/tab_analysis.svg
 assets/icons/tab_curve.svg
 assets/icons/tab_dimensions.svg
 assets/icons/tab_exchange.svg
+assets/icons/tab_file.svg
 assets/icons/tab_gdt.svg
 assets/icons/tab_home.svg
 assets/icons/tab_mods.svg
@@ -146,6 +156,7 @@ examples/scripts/openscad_parity.wcs
 examples/scripts/p1_parametric_kernel.wcs
 examples/scripts/pmi_journal.wcs
 examples/scripts/ruby_style.wcs
+examples/scripts/tank.wcs
 journals/README.md
 journals/smoke.wjournal
 make_todos.sh
@@ -295,6 +306,7 @@ src/waifucad/gui/navigation.d
 src/waifucad/gui/registry.d
 src/waifucad/gui/ribbon_actions.d
 src/waifucad/gui/ribbon_host.d
+src/waifucad/gui/ribbon_search.d
 src/waifucad/gui/selector.d
 src/waifucad/gui/theme.d
 src/waifucad/interchange/openscad/exporter.d
@@ -314,6 +326,7 @@ src/waifucad/journal/backends/scl/README.md
 src/waifucad/journal/backends/scl/backend.d
 src/waifucad/journal/journal.d
 src/waifucad/journal/script_runtime.d
+src/waifucad/journal/undo.d
 src/waifucad/kernel/backend_api.d
 src/waifucad/kernel/builtin_preview.d
 src/waifucad/kernel/datums.d
@@ -411,6 +424,8 @@ tests/p1_modelling_kernel_static.py
 tests/pmi_scl_static.py
 tests/png_validate.py
 tests/portability_layout.sh
+tests/ribbon_search.d
+tests/ribbon_search.sh
 tests/scheduler_static.py
 tests/scl_ruby_syntax.d
 tests/scl_ruby_syntax.sh
@@ -422,6 +437,9 @@ tests/sketch_solver_p1.sh
 tests/sketch_solver_static.py
 tests/smoke.sh
 tests/thread_pool_c.c
+tests/undo_redo.expected
+tests/undo_redo.wcs
+tests/undo_redo_static.py
 tests/validate_target_manifests.py
 tests/wcs_extension_policy.py
 waifus/2.png

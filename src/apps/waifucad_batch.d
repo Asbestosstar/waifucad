@@ -7,6 +7,7 @@ import waifucad.kernel.model : Model;
 import waifucad.kernel.waifubrep_backend : waifuBRepBackend;
 import waifucad.brep.dump : dumpBRep;
 import waifucad.journal.journal : Journal;
+import waifucad.journal.undo : UndoStack;
 import waifucad.journal.backend_api : ScriptContext;
 import waifucad.sections.pmi.store : PmiStore;
 import waifucad.scripts.runner : runSclScript;
@@ -29,6 +30,7 @@ private void usage() nothrow @nogc
         "Input (choose one):\n" ~
         "  --script FILE | --journal-in FILE | --import-openscad FILE | --command TEXT | --repl\n" ~
         "General: --journal-out FILE --threads N --dump-model --dump-brep\n" ~
+        "Undo/redo log: --undo (implied by --repl and --journal-in); scripts may also run undo_enable [DEPTH]\n" ~
         "Ruby-style SCL can be used with --command or interactively with --repl.\n" ~
         "\nOpenSCAD import (always creates dumb mesh bodies):\n" ~
         "  --import-name NAME\n" ~
@@ -130,6 +132,7 @@ extern(C) int main(int argc, char** argv)
     const(char)* journalPath = null;
     char* commandText = null;
     bool repl = false;
+    bool undoLog = false;
     const(char)* importName = "openscad_import".ptr;
     bool dumpModel = false;
     bool dumpExact = false;
@@ -160,6 +163,7 @@ extern(C) int main(int argc, char** argv)
         {
             if (!parseUnsigned(argv[++i], &workerCount, 64u)) { fprintf(stderr,"Invalid --threads value; expected 0..64.\n"); return 2; }
         }
+        else if (strcmp(arg, "--undo".ptr) == 0) undoLog = true;
         else if (strcmp(arg, "--dump-model".ptr) == 0) dumpModel = true;
         else if (strcmp(arg, "--dump-brep".ptr) == 0) dumpExact = true;
 
@@ -303,6 +307,8 @@ extern(C) int main(int argc, char** argv)
     if(journalPath!is null && !journal.start(journalPath)){fprintf(stderr,"Could not create journal: %s\n",journalPath);return 3;}
     PmiStore pmiStore; pmiStore.clear();
     ScriptContext context; context.model=&model; context.journal=&journal; context.recordCommands=journalPath!is null; context.runtime.initialise(); context.pmi=&pmiStore;
+    UndoStack undoStack; context.undo=&undoStack;
+    if(undoLog||repl||journalInputPath!is null) undoStack.enable();
 
     int result=0;
     if(scriptPath!is null) result=runSclScript(&context,scriptPath);
@@ -339,6 +345,7 @@ extern(C) int main(int argc, char** argv)
     if(dumpModel) model.dump();
     if(dumpExact) dumpBRep(&model.exactGeometry);
     journal.stop();
+    undoStack.disable();
     return result;
 }
 

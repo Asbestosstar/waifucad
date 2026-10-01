@@ -50,12 +50,23 @@ assert 'WC_COCOA_PARITY_BUILD "2026-09-07-v7"' in bridge
 assert 'WaifuCAD Cocoa renderer: exact planar faces' in bridge
 for token in ['assets/icons/%s.svg', 'WcRibbonButton',
               'hasHorizontalScroller = YES', 'WcHumanise',
-              'MTLCreateSystemDefaultDevice', 'CAMetalLayer',
               'g_callbacks.submit_command', 'g_callbacks.ribbon_template',
               'g_callbacks.feature_action', 'g_callbacks.feature_reorder',
               'initWithContentsOfFile', 'scrollToPoint', 'reflectScrolledClipView',
               'WcResolveProjectPath', 'WC_ASSET_ROOT']:
     assert token in bridge, f'cocoa bridge is missing {token}'
+
+# Turn-6 anchors: the viewport must stay a plain layer-less NSView (the old
+# CAMetalLayer hosting hid the grid/CSYS by making the view layer-hosting),
+# the ribbon carries the NX-compact metrics and the shared command search box.
+for token in ['layer-HOSTING', 'ribbonHeight = 118.0', 'statusHeight = 20.0',
+              'NSSearchField', 'g_callbacks.ribbon_search', 'ribbonSearchChanged:',
+              'runRibbonSearchResultAtIndex:', 'ribbon_search', 'Search commands',
+              'NSPopover']:
+    assert token in bridge, f'cocoa bridge is missing {token}'
+for forbidden in ['#import <Metal/Metal.h>', '#import <QuartzCore/CAMetalLayer.h>',
+                  'MTLCreateSystemDefaultDevice', 'MTLCommandQueue', 'self.layer = [']:
+    assert forbidden not in bridge, f'cocoa bridge must not host a Metal layer ({forbidden})'
 
 # GTK4 layout/feature parity anchors: rail, navigator pages, graphics pipeline,
 # centred command overlay, orbit/zoom/pan/hover/fit interactions, journal verbs.
@@ -127,7 +138,7 @@ assert '[self drawPlanarBodyFacesWithTransform:&transform height:height];' in dr
 assert draw.find('[self drawPlanarBodyFacesWithTransform:&transform height:height];') < draw.find('[self drawPlanarFaceSelectionWithTransform:&transform height:height];')
 # The fixed AppKit ribbon must keep all seven Sections visible: compact two-row
 # geometry, first row visually on top, and no 70 px natural-height overflow.
-assert 'const CGFloat sectionHeight = 44.0;' in bridge
+assert 'const CGFloat sectionHeight = 38.0;' in bridge
 assert 'rowTotal - 1u - rowIndex' in bridge
 assert 'iconSize:18.0' in bridge
 # Built-in Section descriptors must reference real project-owned SVG names.

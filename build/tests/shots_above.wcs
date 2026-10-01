@@ -1,0 +1,4 @@
+model(:above_check)
+box(:plate, 140, 140, 10)
+box(:tower_body, 20, 20, 80)
+recompute()

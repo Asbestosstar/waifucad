@@ -89,3 +89,6 @@ assert 'src/waifucad/gui/registry.d' in build
 assert 'src/waifucad/graphics/registry.d' in build
 
 print('Shared GUI/graphics abstraction contract passed.')
+
+assert 'scl_error_text' in abi
+assert 'WcGuiSclErrorTextFn' in abi

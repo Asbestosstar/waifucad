@@ -1,4 +1,18 @@
+# WaifuCAD NX-style menu bar and compact layout patch
+
+This patch completes the desktop chrome of both native front-ends without touching the kernel, journal or Section ABI.
+
+Implemented:
+- **GTK4** (`native/gui/gtk4/wc_gtk4.c`): a six-dropdown menu bar (File/Edit/View/Insert/Tools/Help) above the ribbon, built from `GtkMenuButton` + `GtkPopover`; compact CSS block (menubar, dropdown, status); ribbon scroller 94 -> 68 px; navigator rail buttons 42 -> 36 px; auto-density can no longer override a manual compact choice; `F` fits all and `/` focuses the ribbon command finder; status bar gained a live pointer readout updated from `viewport_motion_cb`.
+- **Cocoa** (`native/gui/cocoa/wc_cocoa.m`): a `WcAppDelegate` category installing a real `NSMenu` (`installMainMenu`) with the identical action mapping, dispatched through `menuBarAction:`.
+- Menu semantics: every mutation still reaches the kernel through the existing `submit_command` / feature-action / feature-dialogue paths — no GUI-click journalling was introduced. File > New Part confirms before `model(:new_part)`; Undo/Redo render as disabled planned controls because the SCL transaction stack does not exist yet.
+
+Verification performed in this environment:
+- All edits anchor-matched and written incrementally; GTK4 call signatures verified against the existing file (`open_path_chooser`, `show_feature_dialogue`, `run_feature_action`, `WC_PATH_CHOOSER_*`).
+- The sandbox lacks GTK4/AppKit headers, so no native compile was run here; `./build.sh` on a host remains the definitive check.
+
 # WaifuCAD /opt Mesa Vulkan discovery patch
+
 
 This patch teaches GPU discovery to look for versioned Mesa installations
 under /opt so machines whose system stack lacks Vulkan can fall back to an

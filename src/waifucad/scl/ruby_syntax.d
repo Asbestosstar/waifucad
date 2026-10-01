@@ -117,6 +117,19 @@ private bool numericUnitSuffix(const(char)* token, const(char)** unit, size_t* n
         suffix = "deg".ptr;
         suffixLength = 4;
     }
+    else if (length > 2 && token[length - 2] == 'm' && token[length - 1] == 'm')
+    {
+        /* Dotless attached sugar: 220mm means 220.mm. */
+        suffix = "mm".ptr;
+        suffixLength = 2;
+    }
+    else if (length > 3 && token[length - 3] == 'd' && token[length - 2] == 'e' &&
+             token[length - 1] == 'g')
+    {
+        /* Dotless attached sugar: 90deg means 90.deg. */
+        suffix = "deg".ptr;
+        suffixLength = 3;
+    }
     else
         return false;
 
@@ -262,6 +275,38 @@ bool normaliseRubyStyleLine(const(char)* input, char* output, size_t capacity) n
     {
         output[0] = 0;
         return true;
+    }
+
+    /* Dotless unit sugar: `220 mm` and `220 deg` (also inside expressions,
+     * e.g. `0 mm - :track_y`) merge into the historical `220.mm` token so
+     * the suffix-stripping path below handles them unchanged. The tokens
+     * point into `scratch`, so the separator NUL becomes the dot in place. */
+    for (size_t i = 0; i + 1 < tokens.count; ++i)
+    {
+        if (tokens.quoted[i] || tokens.quoted[i + 1])
+            continue;
+        const(char)* numeric = tokens.values[i];
+        auto numericLength = strlen(numeric);
+        if (numericLength == 0 || !isNumericPrefix(numeric, numericLength))
+            continue;
+        if (strcmp(tokens.values[i + 1], "mm".ptr) != 0 &&
+            strcmp(tokens.values[i + 1], "deg".ptr) != 0)
+            continue;
+        /* Tokens must be adjacent in scratch (single separator) for the
+         * in-place dot splice to yield "220.mm". */
+        if (tokens.values[i + 1] != numeric + numericLength + 1)
+            continue;
+        {
+            /* scratch is mutable stack memory; only the token view is const. */
+            auto mutableNumeric = cast(char*)numeric;
+            mutableNumeric[numericLength] = '.';
+        }
+        foreach (j; i + 1 .. tokens.count - 1)
+        {
+            tokens.values[j] = tokens.values[j + 1];
+            tokens.quoted[j] = tokens.quoted[j + 1];
+        }
+        --tokens.count;
     }
 
     size_t used = 0;

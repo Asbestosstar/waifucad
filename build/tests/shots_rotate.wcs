@@ -1,0 +1,3 @@
+model(:rotate_check)
+box(:tower, 10, 10, 80)
+recompute()

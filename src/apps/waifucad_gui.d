@@ -9,6 +9,7 @@ import waifucad.core.jobs : hardwareThreadCount;
 import waifucad.kernel.model : Model;
 import waifucad.journal.backend_api : ScriptContext;
 import waifucad.journal.journal : Journal;
+import waifucad.journal.undo : UndoStack;
 import waifucad.sections.pmi.store : PmiStore;
 /* Front-end selection is a build-time target decision: macOS builds
    (-version=WaifuCadGuiCocoa) host the native Cocoa/AppKit bridge and never
@@ -121,6 +122,8 @@ extern(C) int main(int argc, char** argv)
     context.recordCommands = false;
     context.runtime.initialise();
     context.pmi = &pmiStore;
+    UndoStack undoStack;
+    context.undo = &undoStack;
 
     CommandConsoleState commandConsole;
     commandConsole.initialise(theme.width, theme.height);
@@ -133,6 +136,8 @@ extern(C) int main(int argc, char** argv)
             return result;
         }
     }
+    // Startup commands seed the document; only interactive edits are undoable.
+    undoStack.enable();
 
     size_t sectionCount = 0;
     auto sections = ribbonHost.sectionLauncherEntries(&sectionCount);

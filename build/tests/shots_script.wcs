@@ -1,0 +1,5 @@
+model(:shot_check)
+box(:block, 40, 25, 15)
+recompute()
+screenshot("build/tests/shots/scl_flat.png")
+screenshot("build/tests/shots/scl_ray.png", -30, 25, 0, 320, 240, 1, :ray)

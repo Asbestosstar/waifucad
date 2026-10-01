@@ -138,6 +138,7 @@ src/waifucad/kernel/backend_api.d
 src/waifucad/kernel/builtin_preview.d
 src/waifucad/kernel/waifubrep_backend.d
 src/waifucad/journal/journal.d
+src/waifucad/journal/undo.d
 src/waifucad/journal/backend_api.d
 src/waifucad/journal/script_runtime.d
 src/waifucad/journal/backends/scl/backend.d
@@ -168,6 +169,7 @@ src/waifucad/gui/theme.d
 src/waifucad/gui/navigation.d
 src/waifucad/gui/ribbon_host.d
 src/waifucad/gui/ribbon_actions.d
+src/waifucad/gui/ribbon_search.d
 src/waifucad/gui/feature_dialogues.d
 src/waifucad/gui/command_console.d
 src/waifucad/graphics/api.d

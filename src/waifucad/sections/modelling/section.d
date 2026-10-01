@@ -4,7 +4,8 @@ import waifucad.sections.api : SectionDescriptorV1, SectionCapability, WC_SECTIO
 import waifucad.sections.ribbon : RibbonTabDescriptorV1, RibbonCommandDescriptorV1, SectionRibbonV1, RibbonCommandFlags;
 
 /* The Modelling Section is WaifuCAD's default application context. */
-private __gshared const RibbonTabDescriptorV1[5] modellingTabs = [
+private __gshared const RibbonTabDescriptorV1[6] modellingTabs = [
+    RibbonTabDescriptorV1("modelling.file".ptr, "ribbon.modelling.file".ptr, "tab_file".ptr),
     RibbonTabDescriptorV1("modelling.home".ptr, "ribbon.modelling.home".ptr, "tab_home".ptr),
     RibbonTabDescriptorV1("modelling.curve".ptr, "ribbon.modelling.curve".ptr, "tab_curve".ptr),
     RibbonTabDescriptorV1("modelling.surface".ptr, "ribbon.modelling.surface".ptr, "tab_surface".ptr),
@@ -12,7 +13,7 @@ private __gshared const RibbonTabDescriptorV1[5] modellingTabs = [
     RibbonTabDescriptorV1("modelling.tools".ptr, "ribbon.modelling.tools".ptr, "tab_tools".ptr)
 ];
 
-private __gshared const RibbonCommandDescriptorV1[26] modellingCommands = [
+private __gshared const RibbonCommandDescriptorV1[34] modellingCommands = [
     RibbonCommandDescriptorV1("modelling.sketch".ptr, "command.sketch".ptr, "cmd_sketch".ptr, "modelling.home".ptr, "group.create".ptr, cast(uint)RibbonCommandFlags.requiresDocument),
     RibbonCommandDescriptorV1("modelling.extrude".ptr, "command.extrude".ptr, "cmd_extrude".ptr, "modelling.home".ptr, "group.create".ptr, cast(uint)RibbonCommandFlags.requiresDocument),
     RibbonCommandDescriptorV1("modelling.revolve".ptr, "command.revolve".ptr, "cmd_revolve".ptr, "modelling.home".ptr, "group.create".ptr, cast(uint)RibbonCommandFlags.requiresDocument),
@@ -33,12 +34,21 @@ private __gshared const RibbonCommandDescriptorV1[26] modellingCommands = [
     RibbonCommandDescriptorV1("modelling.datum_csys".ptr, "command.datum_csys".ptr, "cmd_datum_csys".ptr, "modelling.surface".ptr, "group.datum".ptr, cast(uint)RibbonCommandFlags.requiresDocument),
     RibbonCommandDescriptorV1("modelling.measure".ptr, "command.measure".ptr, "cmd_measure".ptr, "modelling.analysis".ptr, "group.inspect".ptr, cast(uint)RibbonCommandFlags.requiresDocument),
     RibbonCommandDescriptorV1("modelling.mass_properties".ptr, "command.mass_properties".ptr, "cmd_mass".ptr, "modelling.analysis".ptr, "group.inspect".ptr, cast(uint)RibbonCommandFlags.requiresSelection),
-    RibbonCommandDescriptorV1("modelling.import_openscad".ptr, "interchange.openscad.import".ptr, "cmd_import_scad".ptr, "modelling.tools".ptr, "group.interchange".ptr, cast(uint)RibbonCommandFlags.requiresDocument),
-    RibbonCommandDescriptorV1("modelling.export_openscad".ptr, "interchange.openscad.export".ptr, "cmd_export_scad".ptr, "modelling.tools".ptr, "group.interchange".ptr, cast(uint)RibbonCommandFlags.requiresDocument),
-    RibbonCommandDescriptorV1("modelling.import_dumb_body".ptr, "command.import_dumb_body".ptr, "cmd_import_body".ptr, "modelling.tools".ptr, "group.interchange".ptr, cast(uint)RibbonCommandFlags.requiresDocument),
+    RibbonCommandDescriptorV1("modelling.import_openscad".ptr, "interchange.openscad.import".ptr, "cmd_import_scad".ptr, "modelling.file".ptr, "group.file_import".ptr, cast(uint)RibbonCommandFlags.requiresDocument),
+    RibbonCommandDescriptorV1("modelling.export_openscad".ptr, "interchange.openscad.export".ptr, "cmd_export_scad".ptr, "modelling.file".ptr, "group.file_export".ptr, cast(uint)RibbonCommandFlags.requiresDocument),
+    RibbonCommandDescriptorV1("modelling.import_dumb_body".ptr, "command.import_dumb_body".ptr, "cmd_import_body".ptr, "modelling.file".ptr, "group.file_import".ptr, cast(uint)RibbonCommandFlags.requiresDocument),
     RibbonCommandDescriptorV1("modelling.journal_record".ptr, "journal.record".ptr, "cmd_record".ptr, "modelling.tools".ptr, "group.automation".ptr, cast(uint)RibbonCommandFlags.toggle),
     RibbonCommandDescriptorV1("modelling.run_journal".ptr, "journal.run".ptr, "cmd_script".ptr, "modelling.tools".ptr, "group.automation".ptr, 0),
-    RibbonCommandDescriptorV1("modelling.run_script".ptr, "command.run_script".ptr, "cmd_script".ptr, "modelling.tools".ptr, "group.automation".ptr, 0)
+    RibbonCommandDescriptorV1("modelling.run_script".ptr, "command.run_script".ptr, "cmd_script".ptr, "modelling.tools".ptr, "group.automation".ptr, 0),
+
+    RibbonCommandDescriptorV1("modelling.new_part".ptr, "file.new_part".ptr, "cmd_new".ptr, "modelling.file".ptr, "group.file_new".ptr, 0),
+    RibbonCommandDescriptorV1("modelling.open_part".ptr, "file.open_part".ptr, "cmd_open".ptr, "modelling.file".ptr, "group.file_open".ptr, 0),
+    RibbonCommandDescriptorV1("modelling.save_part".ptr, "file.save_part".ptr, "cmd_save".ptr, "modelling.file".ptr, "group.file_save".ptr, cast(uint)RibbonCommandFlags.requiresDocument),
+    RibbonCommandDescriptorV1("modelling.import_step".ptr, "file.import_step".ptr, "cmd_import_step".ptr, "modelling.file".ptr, "group.file_import".ptr, cast(uint)RibbonCommandFlags.planned),
+    RibbonCommandDescriptorV1("modelling.import_jt".ptr, "file.import_jt".ptr, "cmd_import_jt".ptr, "modelling.file".ptr, "group.file_import".ptr, cast(uint)RibbonCommandFlags.planned),
+    RibbonCommandDescriptorV1("modelling.export_step".ptr, "file.export_step".ptr, "cmd_export_step".ptr, "modelling.file".ptr, "group.file_export".ptr, cast(uint)RibbonCommandFlags.planned),
+    RibbonCommandDescriptorV1("modelling.export_jt".ptr, "file.export_jt".ptr, "cmd_export_jt".ptr, "modelling.file".ptr, "group.file_export".ptr, cast(uint)RibbonCommandFlags.planned),
+    RibbonCommandDescriptorV1("modelling.exit".ptr, "file.exit".ptr, "cmd_exit".ptr, "modelling.file".ptr, "group.file_exit".ptr, 0)
 ];
 
 private __gshared const SectionRibbonV1 modellingRibbon = SectionRibbonV1(

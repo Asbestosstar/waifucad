@@ -82,6 +82,14 @@ Ribbon command buttons do not write kernel memory directly. Simple actions run i
 
 The Nightcore theme image is loaded from `waifus/nightcore.png` and is displayed at the **top-right of the ribbon**, leaving the left navigator and viewport available for CAD work.
 
+## Menu bar
+
+Both native front-ends render an NX-style menu bar above the ribbon with **File / Edit / View / Insert / Tools / Help** menus. Every entry routes through the same semantic SCL/journal paths as the equivalent ribbon command — File manages journals, scripts, screenshots and confirmed part reinitialisation; Edit edits, deletes and dependency-safe reorders the selected history feature; View fits the model and toggles the compact ribbon; Insert starts sketches and direct primitives; Tools reports exact mass properties. Undo/Redo run the SCL `undo()`/`redo()` commands against the bounded undo/redo transaction log (disabled when nothing can be undone or redone). The GTK4 front-end uses `GtkMenuButton` dropdown popovers; the Cocoa front-end installs a real `NSMenu`. Keyboard shortcuts: **F** fits all, **/** focuses the ribbon command finder.
+
+### Compact layout
+
+The baseline layout is deliberately NX-dense: the ribbon scroller is 68 px tall, navigator rail buttons are 36 px, and the status bar carries a live pointer readout alongside the feature/exact/preview/failed counts. Ribbon density still auto-shrinks when the window narrows, but an explicit **View ▸ Toggle Compact Ribbon** choice now wins over auto-density until it is toggled back.
+
 ## Left navigator rail
 
 GTK4 provides an NX-inspired left application rail without copying proprietary resources. It switches between:

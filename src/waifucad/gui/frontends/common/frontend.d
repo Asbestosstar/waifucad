@@ -12,8 +12,10 @@
 module waifucad.gui.frontends.common.frontend;
 
 import core.stdc.stdio : snprintf;
+import waifucad.scl.interpreter : sclErrorText;
 import waifucad.gui.ribbon_host : RibbonHostState;
 import waifucad.gui.ribbon_actions : ribbonCommandTemplate;
+import waifucad.gui.ribbon_search : ribbonSearch;
 import waifucad.gui.feature_dialogues : FeatureDialogueDescriptorV1, FeatureDialogueFieldSource,
     featureDialogueForCommand, featureDialogueForFeature, featureDialogueAcceptsSelection;
 import waifucad.gui.command_console : CommandConsoleState;
@@ -199,6 +201,8 @@ extern(C) alias WcGuiSketchAddCircleFn = int function(void*, uint, double, doubl
 extern(C) alias WcGuiSketchAddRectangleFn = int function(void*, uint, double, double, double, double) nothrow @nogc;
 extern(C) alias WcGuiFeatureActionFn = int function(void*, uint, int) nothrow @nogc;
 extern(C) alias WcGuiFeatureReorderFn = int function(void*, uint, uint, int) nothrow @nogc;
+extern(C) alias WcGuiRibbonSearchFn = size_t function(void*, const(char)*, WcGuiRibbonCommand*, size_t) nothrow @nogc;
+extern(C) alias WcGuiSclErrorTextFn = const(char)* function(void*, int) nothrow @nogc;
 
 struct WcGuiCallbacks
 {
@@ -227,6 +231,8 @@ struct WcGuiCallbacks
     WcGuiSketchAddRectangleFn sketchAddRectangle;
     WcGuiFeatureActionFn featureAction;
     WcGuiFeatureReorderFn featureReorder;
+    WcGuiRibbonSearchFn ribbonSearch;
+    WcGuiSclErrorTextFn sclErrorText;
 }
 
 struct GuiFrontendContext
@@ -995,12 +1001,25 @@ extern(C) const(char)* guiRibbonTemplate(void* opaque, const(char)* commandId) n
     return ribbonCommandTemplate(commandId);
 }
 
+extern(C) size_t guiRibbonSearch(void* opaque, const(char)* query, WcGuiRibbonCommand* matches, size_t capacity) nothrow @nogc
+{
+    /* The opaque context is not needed: matching is pure over the shared
+       Section ribbon registry.  One implementation, every toolkit. */
+    return ribbonSearch(query, matches, capacity);
+}
+
 /* Availability probe shared by every front-end: pass the front-end's native
  * wc_<id>_native_available symbol. */
 bool guiFrontendAvailable(alias nativeAvailable)() nothrow @nogc
 {
     return nativeAvailable() != 0;
 }
+private extern(C) const(char)* guiSclErrorText(void* userData, int code) nothrow @nogc
+{
+    cast(void)userData;
+    return sclErrorText(code);
+}
+
 
 /* Shared native run path. The only front-end-specific input is the native
  * wc_<id>_run bridge symbol; window configuration, callback wiring and the
@@ -1063,6 +1082,8 @@ int runGuiFrontend(alias nativeRun)(Model* model,
     callbacks.sketchAddRectangle = &guiSketchAddRectangle;
     callbacks.featureAction = &guiFeatureAction;
     callbacks.featureReorder = &guiFeatureReorder;
+    callbacks.ribbonSearch = &guiRibbonSearch;
+    callbacks.sclErrorText = &guiSclErrorText;
     return nativeRun(&config, &callbacks, &context);
 }
 

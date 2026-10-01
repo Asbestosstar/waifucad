@@ -49,6 +49,24 @@
    "scl": "get_feature_count OUT"
   },
   {
+   "command": "get_undo_depth",
+   "arguments": [
+    "OUT"
+   ],
+   "output_type": "number",
+   "wcs": "out = get_undo_depth()",
+   "scl": "get_undo_depth OUT"
+  },
+  {
+   "command": "get_redo_depth",
+   "arguments": [
+    "OUT"
+   ],
+   "output_type": "number",
+   "wcs": "out = get_redo_depth()",
+   "scl": "get_redo_depth OUT"
+  },
+  {
    "command": "get_model_worker_count",
    "arguments": [
     "OUT"

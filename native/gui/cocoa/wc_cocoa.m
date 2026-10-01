@@ -15,22 +15,29 @@
  *
  * All model mutations travel over the semantic SCL/journal callbacks
  * (submit_command, feature_action, feature_reorder) exactly like GTK4; no
- * direct model access. The Metal layer provides the themed background clear
- * (CAMetalLayer), with scene drawing over it in drawRect, matching GTK4's
- * single drawing-area model.
+ * direct model access.
+ *
+ * The graphics viewport is a plain layer-less NSView: drawRect paints the
+ * opaque themed background and then the grid, CSYS frames, bodies and text
+ * with ordinary AppKit drawing.  An earlier revision replaced the backing
+ * layer with a CAMetalLayer; that turned the view into a layer-HOSTING view,
+ * which stops AppKit from compositing drawRect content — the background
+ * flickered/stretched on resize and the grid/CSYS/scene never appeared.
+ * The single-drawing-area model therefore stays pure AppKit until the
+ * dedicated Metal WaifuBRep renderer lands (at which point scene content
+ * moves into Metal encode calls instead of being composited under a layer).
  *
  * Cocoa consumes the same toolkit-neutral feature-dialogue descriptors and
- * interactive sketch callbacks as GTK4. The dedicated Metal WaifuBRep
- * renderer remains separate graphics-backend work; until it lands both
- * front-ends deliberately use the same bootstrap body-bounds display policy.
+ * interactive sketch callbacks as GTK4.  Until the Metal renderer lands,
+ * both front-ends deliberately use the same bootstrap body-bounds display
+ * policy.
  *
  * Compile with clang -fobjc-arc; link -framework Cocoa -framework Metal
- * -framework QuartzCore (build.sh does).
+ * -framework QuartzCore (build.sh does; Metal/QuartzCore stay linked for
+ * the future renderer even though the viewport no longer hosts a layer).
  */
 
 #import <Cocoa/Cocoa.h>
-#import <Metal/Metal.h>
-#import <QuartzCore/CAMetalLayer.h>
 #import "wc_cocoa.h"
 #include "wc_gpu_probe.h"
 
@@ -1328,6 +1335,9 @@ static int WcFeatureNameForId(uint32_t featureId, char *output, size_t capacity)
 @property (strong) WcCommandBoxView *commandBox;
 @property (strong) NSTextField *commandStatusLabel;
 @property (strong) NSTextField *commandField;
+@property (strong) NSSearchField *ribbonSearchField;
+@property (strong) NSPopover *ribbonSearchPopover;
+@property (strong) NSMutableArray<NSString *> *ribbonSearchResultIds;
 @property (strong) WcPanelView *statusBar;
 @property (strong) NSTextField *rendererStatus;
 @property (strong) NSMutableArray<NSString *> *commandIds;
@@ -1352,6 +1362,10 @@ static int WcFeatureNameForId(uint32_t featureId, char *output, size_t capacity)
 - (void)finishSketchClicked:(id)sender;
 - (void)chooseSnapCandidate:(NSMenuItem *)sender;
 - (void)focusCommandLine;
+- (void)ribbonSearchChanged:(id)sender;
+- (void)ribbonSearchResultClicked:(NSButton *)sender;
+- (void)runRibbonSearchResultAtIndex:(NSUInteger)index;
+- (void)dismissRibbonSearch;
 - (void)syncNavigatorSelectionToState;
 - (void)reloadNavigatorKeepingSelection;
 - (void)layoutNavigatorTable;
@@ -1506,14 +1520,14 @@ static int WcFeatureNameForId(uint32_t featureId, char *output, size_t capacity)
     {
         self.layer.backgroundColor = [WcTabActiveBackground() CGColor];
         self.attributedTitle = [[NSAttributedString alloc] initWithString:self.title
-                                                               attributes:@{ NSFontAttributeName : [NSFont boldSystemFontOfSize:11],
+                                                               attributes:@{ NSFontAttributeName : [NSFont boldSystemFontOfSize:10],
                                                                              NSForegroundColorAttributeName : WcTabActiveText() }];
     }
     else
     {
         self.layer.backgroundColor = [[NSColor clearColor] CGColor];
         self.attributedTitle = [[NSAttributedString alloc] initWithString:self.title
-                                                               attributes:@{ NSFontAttributeName : [NSFont systemFontOfSize:11],
+                                                               attributes:@{ NSFontAttributeName : [NSFont systemFontOfSize:10],
                                                                              NSForegroundColorAttributeName : WcTextMain() }];
     }
 }
@@ -1537,13 +1551,11 @@ static int WcFeatureNameForId(uint32_t featureId, char *output, size_t capacity)
 @end
 
 /* ------------------------------------------------------------------ */
-/* Graphics view: Metal clear + full scene draw + viewport input.      */
+/* Graphics view: opaque themed background + full scene draw + input.  */
 /* ------------------------------------------------------------------ */
 
 @interface WcGraphicsView : NSView
 {
-    id<MTLCommandQueue> _queue;
-    BOOL _metal;
     NSTrackingArea *_trackingArea;
 }
 @property (nonatomic, weak) id controller;
@@ -1928,35 +1940,15 @@ static NSPoint WcSketchAppKitPoint(double sx, double sy, double height)
 - (instancetype)initWithFrame:(NSRect)frame
 {
     self = [super initWithFrame:frame];
-    if (self != nil)
-    {
-        self.wantsLayer = YES;
-        id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-        if (device != nil)
-        {
-            _queue = [device newCommandQueue];
-            CAMetalLayer *layer = [CAMetalLayer layer];
-            layer.device = device;
-            layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
-            layer.framebufferOnly = YES;
-            self.layer = layer;
-            _metal = YES;
-        }
-    }
+    /* Deliberately NOT layer-backed: the scene (background, grid, CSYS,
+       bodies, text) is drawn entirely in drawRect with ordinary AppKit
+       drawing. Hosting a CAMetalLayer here previously made the view
+       layer-hosting, which suppresses drawRect compositing and hid the
+       whole scene behind a bare Metal clear. */
     return self;
 }
 
 - (BOOL)acceptsFirstResponder { return YES; }
-
-- (void)viewDidMoveToWindow
-{
-    [super viewDidMoveToWindow];
-    if (_metal && self.window != nil)
-    {
-        CAMetalLayer *layer = (CAMetalLayer *)self.layer;
-        layer.contentsScale = self.window.backingScaleFactor;
-    }
-}
 
 - (void)updateTrackingAreas
 {
@@ -1970,33 +1962,13 @@ static NSPoint WcSketchAppKitPoint(double sx, double sy, double height)
     [self addTrackingArea:_trackingArea];
 }
 
+/* The viewport background must be an OPAQUE AppKit fill inside drawRect.
+   With alpha < 1 AppKit would composite over an undefined backing store,
+   which is what made the background look broken on top of hiding the scene. */
 - (void)clearMetalBackground
 {
-    if (!_metal)
-    {
-        [WcRGBA(0.055, 0.047, 0.085, 1.0) setFill];
-        NSRectFill(self.bounds);
-        return;
-    }
-    CAMetalLayer *layer = (CAMetalLayer *)self.layer;
-    CGFloat scale = layer.contentsScale > 0.0 ? layer.contentsScale : 1.0;
-    CGSize size = CGSizeMake(self.bounds.size.width * scale, self.bounds.size.height * scale);
-    if (size.width < 1.0 || size.height < 1.0)
-        return;
-    layer.drawableSize = size;
-    id<CAMetalDrawable> drawable = [layer nextDrawable];
-    if (drawable == nil)
-        return;
-    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
-    pass.colorAttachments[0].texture = drawable.texture;
-    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
-    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-    pass.colorAttachments[0].clearColor = MTLClearColorMake(0.055, 0.047, 0.085, 1.0);
-    id<MTLCommandBuffer> buffer = [_queue commandBuffer];
-    id<MTLRenderCommandEncoder> encoder = [buffer renderCommandEncoderWithDescriptor:pass];
-    [encoder endEncoding];
-    [buffer presentDrawable:drawable];
-    [buffer commit];
+    [WcRGBA(0.055, 0.047, 0.085, 1.0) setFill];
+    NSRectFill(self.bounds);
 }
 
 /* Scene helpers ------------------------------------------------------------ */
@@ -3008,6 +2980,18 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
     return 1;
 }
 
+static void WcReportSclError(int code, const char *line)
+{
+    const char *detail = g_callbacks.scl_error_text != NULL ? g_callbacks.scl_error_text(g_userData, code) : NULL;
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = [NSString stringWithFormat:@"SCL error %d", code];
+    alert.informativeText = [NSString stringWithFormat:@"%s\n\nCommand: %s",
+        detail != NULL && detail[0] != '\0' ? detail : "command failed",
+        line != NULL ? line : "(unknown)"];
+    [alert addButtonWithTitle:@"Close"];
+    [alert runModal];
+}
+
 @implementation WcAppDelegate
 
 /* -- status plumbing ------------------------------------------------ */
@@ -3026,9 +3010,17 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
 
 - (int)submitLine:(char *)line
 {
+    int status;
+    char failedLine[1024];
     if (line == NULL || g_callbacks.submit_command == NULL)
         return 10;
-    return g_callbacks.submit_command(g_userData, line);
+    status = g_callbacks.submit_command(g_userData, line);
+    if (status != 0)
+    {
+        (void)snprintf(failedLine, sizeof(failedLine), "%s", line);
+        WcReportSclError(status, failedLine);
+    }
+    return status;
 }
 
 - (void)commandActivated
@@ -3831,6 +3823,42 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
         return;
     }
 
+    /* File tab: NX-style application-level actions, handled natively. */
+    if (strcmp(commandId, "modelling.new_part") == 0)
+    {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"Start a new part?";
+        alert.informativeText = @"The current model will be reinitialised.";
+        [alert addButtonWithTitle:@"Cancel"];
+        [alert addButtonWithTitle:@"New Part"];
+        if ([alert runModal] == NSAlertSecondButtonReturn)
+            [self submitLine:"model(:new_part)"];
+        return;
+    }
+    if (strcmp(commandId, "modelling.open_part") == 0)
+    {
+        NSOpenPanel *panel = [NSOpenPanel openPanel];
+        panel.title = @"Open Part";
+        panel.allowsMultipleSelection = NO;
+        if ([panel runModal] == NSModalResponseOK && panel.URL != nil)
+            [self submitPathCommand:1 path:[NSString stringWithUTF8String:panel.URL.fileSystemRepresentation]];
+        return;
+    }
+    if (strcmp(commandId, "modelling.save_part") == 0)
+    {
+        NSSavePanel *panel = [NSSavePanel savePanel];
+        panel.title = @"Save Part";
+        panel.nameFieldStringValue = @"part.wjournal";
+        if ([panel runModal] == NSModalResponseOK && panel.URL != nil)
+            [self submitPathCommand:2 path:[NSString stringWithUTF8String:panel.URL.fileSystemRepresentation]];
+        return;
+    }
+    if (strcmp(commandId, "modelling.exit") == 0)
+    {
+        [NSApp terminate:nil];
+        return;
+    }
+
     const WcFeatureDialogueDescriptorV1 *dialogue = g_callbacks.feature_dialogue != NULL
         ? g_callbacks.feature_dialogue(g_userData, commandId) : NULL;
     if (dialogue != NULL)
@@ -3943,13 +3971,13 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
         [subview removeFromSuperview];
     CGFloat x = 6.0;
     WcTabButton *sectionsTab = [self makeTabButton:@"Sections" tabId:"global.sections"];
-    sectionsTab.frame = NSMakeRect(x, 1, 84, 26);
+    sectionsTab.frame = NSMakeRect(x, 1, 76, 22);
     [self.tabsHost addSubview:sectionsTab];
-    x += 88.0;
+    x += 80.0;
     WcTabButton *modsTab = [self makeTabButton:@"Mods" tabId:"global.mods"];
-    modsTab.frame = NSMakeRect(x, 1, 64, 26);
+    modsTab.frame = NSMakeRect(x, 1, 56, 22);
     [self.tabsHost addSubview:modsTab];
-    x += 68.0;
+    x += 60.0;
 
     if (g_state.sketch_mode)
     {
@@ -3960,7 +3988,7 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
         WcTabButton *tab = [self makeTabButton:sketchTitle tabId:"sketch.edit"];
         NSSize natural = [[tab cell] cellSize];
         CGFloat width = natural.width + 20 < 100 ? 100 : natural.width + 20;
-        tab.frame = NSMakeRect(x, 1, width, 26);
+        tab.frame = NSMakeRect(x, 1, width, 22);
         [self.tabsHost addSubview:tab];
     }
     else if (ribbon == NULL || ribbon->tab_count == 0)
@@ -3978,7 +4006,7 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
             WcTabButton *tab = [self makeTabButton:label tabId:ribbon->tabs[i].id];
             NSSize natural = [[tab cell] cellSize];
             CGFloat width = natural.width + 20 < 70 ? 70 : natural.width + 20;
-            tab.frame = NSMakeRect(x, 1, width, 26);
+            tab.frame = NSMakeRect(x, 1, width, 22);
             [self.tabsHost addSubview:tab];
             x += width + 4.0;
         }
@@ -3990,12 +4018,14 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
 - (void)rebuildRibbonGroupsWithRibbon:(const WcCocoaRibbonSnapshot *)ribbon
 {
     [self.commandIds removeAllObjects];
-    NSView *document = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 64, 110)];
+    const CGFloat documentHeight = 92.0;
+    NSView *document = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 64, documentHeight)];
     CGFloat docX = 5.0;
     int compact = g_state.ribbon_density > 0;
-    CGFloat buttonWidth = compact ? 58.0 : 82.0;
-    CGFloat buttonHeight = compact ? 50.0 : 76.0;
-    CGFloat iconSize = compact ? 22.0 : 34.0;
+    /* NX-density command cells: one dense row of small icon+text buttons. */
+    CGFloat buttonWidth = compact ? 52.0 : 70.0;
+    CGFloat buttonHeight = compact ? 44.0 : 62.0;
+    CGFloat iconSize = compact ? 20.0 : 28.0;
 
     if (strcmp(g_state.active_ribbon_tab, "global.sections") == 0)
     {
@@ -4011,20 +4041,20 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
            Use a dedicated compact Section launcher size and place row zero at
            the top so Modelling/Assembly/PMI/Drawing appear in the same order as
            GTK4 rather than being vertically reversed and clipped. */
-        const CGFloat sectionWidth = compact ? 62.0 : 72.0;
-        const CGFloat sectionHeight = 44.0;
+        const CGFloat sectionWidth = compact ? 56.0 : 64.0;
+        const CGFloat sectionHeight = 38.0;
         const CGFloat sectionGap = 2.0;
         size_t rowTotal = count == 0 ? 1u : (count + 3u) / 4u;
         size_t columnTotal = count < 4u ? count : 4u;
         if (columnTotal == 0) columnTotal = 1u;
         CGFloat groupWidth = 10.0 + columnTotal * sectionWidth + (columnTotal - 1u) * sectionGap;
-        CGFloat groupHeight = 16.0 + rowTotal * sectionHeight + (rowTotal - 1u) * sectionGap + 4.0;
+        CGFloat groupHeight = 14.0 + rowTotal * sectionHeight + (rowTotal - 1u) * sectionGap + 4.0;
         for (size_t i = 0; entries != NULL && i < count; ++i)
         {
             size_t rowIndex = i / 4u;
             size_t columnIndex = i % 4u;
             CGFloat innerX = 5.0 + columnIndex * (sectionWidth + sectionGap);
-            CGFloat innerY = 16.0 + (rowTotal - 1u - rowIndex) * (sectionHeight + sectionGap);
+            CGFloat innerY = 14.0 + (rowTotal - 1u - rowIndex) * (sectionHeight + sectionGap);
             NSButton *button = [self makeIconTextButton:entries[i].icon_name
                                                   title:WcHumanise(entries[i].id)
                                                iconSize:18.0
@@ -4043,11 +4073,11 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
         NSButton *manageMods = [self makeIconTextButton:"tab_mods" title:@"Manage Mods" iconSize:26 action:NULL tag:0];
         manageMods.enabled = NO;
         manageMods.target = nil;
-        CGSize modsNatural = [self sizeForIconButton:manageMods minWidth:92 minHeight:56];
-        manageMods.frame = NSMakeRect(5, 16, modsNatural.width, modsNatural.height);
+        CGSize modsNatural = [self sizeForIconButton:manageMods minWidth:88 minHeight:48];
+        manageMods.frame = NSMakeRect(5, 14, modsNatural.width, modsNatural.height);
         manageMods.toolTip = @"Dynamic Mod discovery is still a P1 roadmap item; the versioned Mod ABI already exists";
         [mods addSubview:manageMods];
-        mods.frame = NSMakeRect(docX, 2, modsNatural.width + 10, modsNatural.height + 34);
+        mods.frame = NSMakeRect(docX, 2, modsNatural.width + 10, modsNatural.height + 30);
         [document addSubview:mods];
         docX += 106.0;
     }
@@ -4057,11 +4087,11 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
         NSButton *manageMods = [self makeIconTextButton:"tab_mods" title:@"Manage Mods" iconSize:26 action:NULL tag:0];
         manageMods.enabled = NO;
         manageMods.target = nil;
-        CGSize modsNatural = [self sizeForIconButton:manageMods minWidth:92 minHeight:56];
-        manageMods.frame = NSMakeRect(5, 16, modsNatural.width, modsNatural.height);
+        CGSize modsNatural = [self sizeForIconButton:manageMods minWidth:88 minHeight:48];
+        manageMods.frame = NSMakeRect(5, 14, modsNatural.width, modsNatural.height);
         manageMods.toolTip = @"Dynamic Mod discovery is still a P1 roadmap item; the versioned Mod ABI already exists";
         [mods addSubview:manageMods];
-        mods.frame = NSMakeRect(docX, 2, modsNatural.width + 10, modsNatural.height + 34);
+        mods.frame = NSMakeRect(docX, 2, modsNatural.width + 10, modsNatural.height + 30);
         [document addSubview:mods];
         docX += 106.0;
     }
@@ -4074,14 +4104,14 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
                                                 action:@selector(sketchCircleTool:) tag:0];
         NSButton *rectangle = [self makeIconTextButton:"cmd_rectangle" title:@"Rectangle" iconSize:24
                                                    action:@selector(sketchRectangleTool:) tag:0];
-        CGSize lineSize = [self sizeForIconButton:line minWidth:62 minHeight:52];
-        CGSize circleSize = [self sizeForIconButton:circle minWidth:62 minHeight:52];
-        CGSize rectSize = [self sizeForIconButton:rectangle minWidth:62 minHeight:52];
-        line.frame = NSMakeRect(5, 16, lineSize.width, lineSize.height);
-        circle.frame = NSMakeRect(7 + lineSize.width, 16, circleSize.width, circleSize.height);
-        rectangle.frame = NSMakeRect(9 + lineSize.width + circleSize.width, 16, rectSize.width, rectSize.height);
+        CGSize lineSize = [self sizeForIconButton:line minWidth:56 minHeight:44];
+        CGSize circleSize = [self sizeForIconButton:circle minWidth:56 minHeight:44];
+        CGSize rectSize = [self sizeForIconButton:rectangle minWidth:56 minHeight:44];
+        line.frame = NSMakeRect(5, 14, lineSize.width, lineSize.height);
+        circle.frame = NSMakeRect(7 + lineSize.width, 14, circleSize.width, circleSize.height);
+        rectangle.frame = NSMakeRect(9 + lineSize.width + circleSize.width, 14, rectSize.width, rectSize.height);
         [draw addSubview:line]; [draw addSubview:circle]; [draw addSubview:rectangle];
-        CGFloat drawHeight = MAX(lineSize.height, MAX(circleSize.height, rectSize.height)) + 34;
+        CGFloat drawHeight = MAX(lineSize.height, MAX(circleSize.height, rectSize.height)) + 30;
         CGFloat drawWidth = lineSize.width + circleSize.width + rectSize.width + 16;
         draw.frame = NSMakeRect(docX, 2, drawWidth, drawHeight);
         [document addSubview:draw];
@@ -4090,10 +4120,10 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
         WcGroupView *finish = [self beginGroup:@"Sketch"];
         NSButton *finishButton = [self makeIconTextButton:"cmd_finish_sketch" title:@"Finish Sketch" iconSize:24
                                                        action:@selector(finishSketchClicked:) tag:0];
-        CGSize finishSize = [self sizeForIconButton:finishButton minWidth:62 minHeight:52];
-        finishButton.frame = NSMakeRect(5, 16, finishSize.width, finishSize.height);
+        CGSize finishSize = [self sizeForIconButton:finishButton minWidth:56 minHeight:44];
+        finishButton.frame = NSMakeRect(5, 14, finishSize.width, finishSize.height);
         [finish addSubview:finishButton];
-        finish.frame = NSMakeRect(docX, 2, finishSize.width + 10, finishSize.height + 34);
+        finish.frame = NSMakeRect(docX, 2, finishSize.width + 10, finishSize.height + 30);
         [document addSubview:finish];
         docX += finishSize.width + 14;
     }
@@ -4102,9 +4132,52 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
         NSTextField *placeholder = [NSTextField labelWithString:@"This Section does not have a contextual ribbon yet."];
         placeholder.font = [NSFont systemFontOfSize:11];
         placeholder.textColor = WcSubtle();
-        placeholder.frame = NSMakeRect(docX, 44, 340, 16);
+        placeholder.frame = NSMakeRect(docX, 36, 340, 16);
         [document addSubview:placeholder];
         docX += 348.0;
+    }
+    else if (strcmp(g_state.active_ribbon_tab, "modelling.file") == 0)
+    {
+        /* NX backstage-style File tab: six fixed columns of vertical text menus. */
+        static const char *fileGroups[] = {
+            "group.file_new", "group.file_open", "group.file_save",
+            "group.file_import", "group.file_export", "group.file_exit"
+        };
+        for (size_t g = 0; g < sizeof(fileGroups) / sizeof(fileGroups[0]); ++g)
+        {
+            WcGroupView *group = [self beginGroup:WcHumanise(fileGroups[g])];
+            CGFloat innerY = 14.0;
+            CGFloat maxW = 120.0;
+            int added = 0;
+            for (size_t i = 0; i < ribbon->command_count; ++i)
+            {
+                const WcCocoaRibbonCommand *command = &ribbon->commands[i];
+                NSButton *button;
+                CGSize natural;
+                if (command->tab_id == NULL || strcmp(command->tab_id, "modelling.file") != 0 ||
+                    command->group_id == NULL || strcmp(command->group_id, fileGroups[g]) != 0)
+                    continue;
+                button = [self makeIconTextButton:command->id
+                                            title:WcString(command->localisation_key)
+                                         iconSize:0
+                                           action:@selector(onCommandClicked:)
+                                              tag:(NSInteger)self.commandIds.count];
+                [self.commandIds addObject:[NSString stringWithUTF8String:command->id]];
+                button.enabled = (command->flags & WC_COCOA_RIBBON_FLAG_PLANNED) == 0;
+                natural = [self sizeForIconButton:button minWidth:140 minHeight:18];
+                button.frame = NSMakeRect(5, innerY, natural.width, 20);
+                [group addSubview:button];
+                if (natural.width > maxW)
+                    maxW = natural.width;
+                innerY += 22;
+                added = 1;
+            }
+            if (!added)
+                continue;
+            group.frame = NSMakeRect(docX, 2, maxW + 12, innerY + 8);
+            [document addSubview:group];
+            docX += maxW + 18;
+        }
     }
     else
     {
@@ -4137,9 +4210,9 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
                     ++groupCommands;
                 }
                 int groupCompact = groupCommands > 4 || g_state.window_width_hint < 1180 ? 1 : 0;
-                buttonWidth = groupCompact ? 58.0 : 82.0;
-                buttonHeight = groupCompact ? 50.0 : 76.0;
-                iconSize = groupCompact ? 22.0 : 34.0;
+                buttonWidth = groupCompact ? 52.0 : 70.0;
+                buttonHeight = groupCompact ? 44.0 : 62.0;
+                iconSize = groupCompact ? 20.0 : 28.0;
                 if (group != nil)
                 {
                     group.frame = NSMakeRect(group.frame.origin.x, 2, groupWidth, groupHeight);
@@ -4147,12 +4220,12 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
                     docX += groupWidth + 4.0;
                 }
                 group = [self beginGroup:WcHumanise(command->group_id != NULL ? command->group_id : "group")];
-                group.frame = NSMakeRect(docX, 2, 100, 92); /* provisional; finalised below */
+                group.frame = NSMakeRect(docX, 2, 100, 78); /* provisional; finalised below */
                 lastGroup = command->group_id;
                 innerX = 5.0;
-                innerY = 16.0;
+                innerY = 14.0;
                 groupWidth = 10.0;
-                groupHeight = 32.0;
+                groupHeight = 30.0;
                 rowHeight = buttonHeight;
                 inRow = 0;
             }
@@ -4172,8 +4245,8 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
             innerX += natural.width + 2.0;
             if (innerX + 5.0 > groupWidth)
                 groupWidth = innerX + 5.0;
-            if (innerY + rowHeight + 16.0 > groupHeight)
-                groupHeight = innerY + rowHeight + 16.0;
+            if (innerY + rowHeight + 14.0 > groupHeight)
+                groupHeight = innerY + rowHeight + 14.0;
             ++inRow;
             if (inRow == 4)
             {
@@ -4198,23 +4271,23 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
                                                     action:@selector(onCommandClicked:) tag:(NSInteger)self.commandIds.count];
             [self.commandIds addObject:@"modelling.run_script"];
             CGSize runNatural = [self sizeForIconButton:runScript minWidth:buttonWidth minHeight:buttonHeight];
-            runScript.frame = NSMakeRect(5, 16, runNatural.width, runNatural.height);
+            runScript.frame = NSMakeRect(5, 14, runNatural.width, runNatural.height);
             [scripts addSubview:runScript];
             NSButton *commandLine = [self makeIconTextButton:"cmd_command" title:@"Command Line" iconSize:compact ? 22 : 30
                                                       action:@selector(onCommandClicked:) tag:(NSInteger)self.commandIds.count];
             [self.commandIds addObject:@"modelling.focus_command_line"];
             CGSize lineNatural = [self sizeForIconButton:commandLine minWidth:buttonWidth minHeight:buttonHeight];
-            commandLine.frame = NSMakeRect(5 + runNatural.width + 2, 16, lineNatural.width, lineNatural.height);
+            commandLine.frame = NSMakeRect(5 + runNatural.width + 2, 14, lineNatural.width, lineNatural.height);
             [scripts addSubview:commandLine];
             CGFloat scriptsWidth = runNatural.width + lineNatural.width + 14;
-            CGFloat scriptsHeight = (runNatural.height > lineNatural.height ? runNatural.height : lineNatural.height) + 32;
+            CGFloat scriptsHeight = (runNatural.height > lineNatural.height ? runNatural.height : lineNatural.height) + 30;
             scripts.frame = NSMakeRect(docX, 2, scriptsWidth, scriptsHeight);
             [document addSubview:scripts];
             docX += scriptsWidth + 4.0;
         }
     }
 
-    document.frame = NSMakeRect(0, 0, docX + 8, 110);
+    document.frame = NSMakeRect(0, 0, docX + 8, documentHeight);
     self.groupsScroll.documentView = document;
     [self.groupsScroll.contentView scrollToPoint:NSMakePoint(0, 0)];
     [self.groupsScroll reflectScrolledClipView:self.groupsScroll.contentView];
@@ -4899,11 +4972,125 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
     [self updateAiSummary];
 }
 
+/* -- ribbon command search ---------------------------------------------- */
+
+- (void)ribbonSearchChanged:(id)sender
+{
+    (void)sender;
+    [self updateRibbonSearchResults];
+}
+
+/* Runs the shared D matcher over every built-in Section ribbon and presents
+   the ranked hits in a popover under the search box.  Matching, ranking and
+   flag policy all live in waifucad.gui.ribbon_search (one implementation,
+   every toolkit); this method only owns AppKit widgets. */
+- (void)updateRibbonSearchResults
+{
+    NSString *query = self.ribbonSearchField.stringValue != nil ? self.ribbonSearchField.stringValue : @"";
+    if (g_callbacks.ribbon_search == NULL || query.length == 0)
+    {
+        [self dismissRibbonSearch];
+        return;
+    }
+
+    enum { WC_RIBBON_SEARCH_UI_MAX = 12 };
+    WcCocoaRibbonCommand matches[WC_RIBBON_SEARCH_UI_MAX];
+    const char *queryText = [query UTF8String];
+    size_t count = g_callbacks.ribbon_search(g_userData, queryText, matches, WC_RIBBON_SEARCH_UI_MAX);
+    if (count == 0)
+    {
+        [self dismissRibbonSearch];
+        [self setCommandStatus:[NSString stringWithFormat:@"No ribbon command matches '%@'", query]];
+        return;
+    }
+
+    [self.ribbonSearchResultIds removeAllObjects];
+    const CGFloat rowHeight = 26.0;
+    const CGFloat resultsWidth = 264.0;
+    NSView *results = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, resultsWidth, 8.0 + (CGFloat)count * rowHeight)];
+    for (size_t i = 0; i < count; ++i)
+    {
+        NSString *commandId = WcString(matches[i].id);
+        NSString *title = WcHumanise(matches[i].id);
+        NSString *tabHint = WcHumanise(matches[i].tab_id != NULL ? matches[i].tab_id : "");
+        NSButton *row = [[NSButton alloc] initWithFrame:NSMakeRect(4, 4.0 + (CGFloat)(count - 1u - i) * rowHeight,
+            resultsWidth - 8.0, rowHeight - 2.0)];
+        row.title = [NSString stringWithFormat:@"%@   —   %@", title, tabHint];
+        row.bezelStyle = NSBezelStyleRegularSquare;
+        row.bordered = NO;
+        row.alignment = NSTextAlignmentLeft;
+        row.font = [NSFont systemFontOfSize:11];
+        row.target = self;
+        row.action = @selector(ribbonSearchResultClicked:);
+        row.tag = (NSInteger)i;
+        int planned = (matches[i].flags & WC_COCOA_RIBBON_FLAG_PLANNED) != 0;
+        row.enabled = !planned;
+        row.alphaValue = planned ? 0.45 : 1.0;
+        row.toolTip = planned
+            ? [NSString stringWithFormat:@"%@ (planned)", commandId]
+            : commandId;
+        [results addSubview:row];
+        [self.ribbonSearchResultIds addObject:commandId];
+    }
+
+    NSViewController *content = [[NSViewController alloc] init];
+    content.view = results;
+    if (self.ribbonSearchPopover == nil)
+    {
+        self.ribbonSearchPopover = [[NSPopover alloc] init];
+        self.ribbonSearchPopover.behavior = NSPopoverBehaviorTransient;
+        self.ribbonSearchPopover.animates = NO;
+    }
+    self.ribbonSearchPopover.contentViewController = content;
+    if (!self.ribbonSearchPopover.isShown)
+    {
+        [self.ribbonSearchPopover showRelativeToRect:self.ribbonSearchField.bounds
+                                              ofView:self.ribbonSearchField
+                                       preferredEdge:NSMinYEdge];
+    }
+}
+
+- (void)ribbonSearchResultClicked:(NSButton *)sender
+{
+    [self runRibbonSearchResultAtIndex:(NSUInteger)sender.tag];
+}
+
+- (void)runRibbonSearchResultAtIndex:(NSUInteger)index
+{
+    if (index >= self.ribbonSearchResultIds.count)
+        return;
+    NSString *commandId = self.ribbonSearchResultIds[index];
+    [self dismissRibbonSearch];
+    [self.ribbonSearchField setStringValue:@""];
+    [self runRibbonCommand:[commandId UTF8String]];
+}
+
+- (void)dismissRibbonSearch
+{
+    [self.ribbonSearchPopover close];
+}
+
 /* -- console ------------------------------------------------------------ */
 
 - (BOOL)control:(NSControl *)control textView:(NSTextView *)textView doCommandBySelector:(SEL)commandSelector
 {
-    (void)control;
+    /* The ribbon search box shares the delegate; route its Enter/Esc before
+       the console command handling. */
+    if (control == (NSControl *)self.ribbonSearchField)
+    {
+        if (commandSelector == @selector(insertNewline:))
+        {
+            [self runRibbonSearchResultAtIndex:0];
+            return YES;
+        }
+        if (commandSelector == @selector(cancelOperation:))
+        {
+            [self dismissRibbonSearch];
+            [self.ribbonSearchField setStringValue:@""];
+            return YES;
+        }
+        return NO;
+    }
     (void)textView;
     if (commandSelector == @selector(insertNewline:))
     {
@@ -4972,22 +5159,29 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
     NSView *content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
     self.window.contentView = content;
 
-    const CGFloat ribbonHeight = 140.0;
-    const CGFloat statusHeight = 22.0;
-    const CGFloat railWidth = 48.0;
+    /* NX-compact chrome metrics: the ribbon stays information-dense at any
+       window size — small tab row, one dense command row, slim status bar. */
+    const CGFloat ribbonHeight = 118.0;
+    const CGFloat statusHeight = 20.0;
+    const CGFloat railWidth = 40.0;
 
-    /* Ribbon: tab row + scrolling group row + nightcore art top-right. */
+    /* Ribbon: tab row + scrolling group row + nightcore art + search box. */
     self.ribbonView = [[WcPanelView alloc] initWithFrame:NSMakeRect(0, height - ribbonHeight, width, ribbonHeight)];
     self.ribbonView.fillColour = WcRibbonBackground();
     self.ribbonView.bottomBorderColour = WcRibbonBorder();
     self.ribbonView.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
     [content addSubview:self.ribbonView];
 
-    self.tabsHost = [[NSView alloc] initWithFrame:NSMakeRect(0, ribbonHeight - 28, width - 128, 28)];
+    /* The search field reserves the right end of the tab row; keep contextual
+       tabs clear of it and of the nightcore art column. */
+    const CGFloat artColumnWidth = 124.0;
+    const CGFloat searchFieldWidth = 188.0;
+    self.tabsHost = [[NSView alloc] initWithFrame:NSMakeRect(0, ribbonHeight - 24,
+        width - artColumnWidth - searchFieldWidth - 8, 24)];
     self.tabsHost.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
     [self.ribbonView addSubview:self.tabsHost];
 
-    self.groupsScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, width - 128, 112)];
+    self.groupsScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, width - artColumnWidth, ribbonHeight - 24)];
     self.groupsScroll.hasHorizontalScroller = YES;
     self.groupsScroll.hasVerticalScroller = NO;
     self.groupsScroll.borderType = NSNoBorder;
@@ -4998,13 +5192,29 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
     NSImage *nightcore = g_nightcore;
     if (nightcore != nil)
     {
-        self.nightcoreView = [[NSImageView alloc] initWithFrame:NSMakeRect(width - 124, 26, 112, 88)];
+        self.nightcoreView = [[NSImageView alloc] initWithFrame:NSMakeRect(width - 120, 16, 108, ribbonHeight - 32)];
         self.nightcoreView.image = nightcore;
         self.nightcoreView.imageScaling = NSImageScaleProportionallyDown;
         self.nightcoreView.toolTip = @"Nightcore theme image";
         self.nightcoreView.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
         [self.ribbonView addSubview:self.nightcoreView];
     }
+
+    /* Ribbon command search (NX-style "tell me" box). Matching itself lives
+       in the shared D implementation behind the ribbon_search ABI callback;
+       Cocoa only owns the text field and this results popover. */
+    self.ribbonSearchResultIds = [NSMutableArray array];
+    self.ribbonSearchField = [[NSSearchField alloc] initWithFrame:NSMakeRect(width - artColumnWidth - searchFieldWidth - 4,
+        ribbonHeight - 25, searchFieldWidth, 21)];
+    self.ribbonSearchField.placeholderString = @"Search commands";
+    self.ribbonSearchField.font = [NSFont systemFontOfSize:11];
+    self.ribbonSearchField.target = self;
+    self.ribbonSearchField.action = @selector(ribbonSearchChanged:);
+    self.ribbonSearchField.sendsSearchStringImmediately = YES;
+    self.ribbonSearchField.focusRingType = NSFocusRingTypeNone;
+    self.ribbonSearchField.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
+    self.ribbonSearchField.toolTip = @"Search every ribbon command across all Sections (Enter runs the top hit)";
+    [self.ribbonView addSubview:self.ribbonSearchField];
 
     /* Navigator rail (persistent, 48 px). */
     self.railView = [[WcPanelView alloc] initWithFrame:NSMakeRect(0, statusHeight, railWidth, height - ribbonHeight - statusHeight)];
@@ -5019,8 +5229,8 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
     NSArray<NSString *> *railActions = @[ @"onRailModel:", @"onRailAssembly:", @"onRailAi:" ];
     for (NSUInteger i = 0; i < railIcons.count; ++i)
     {
-        NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(3, 5 + i * 46, 42, 42)];
-        NSImage *icon = WcLoadIcon([railIcons[i] UTF8String], 24);
+        NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(3, 4 + i * 40, 34, 34)];
+        NSImage *icon = WcLoadIcon([railIcons[i] UTF8String], 20);
         if (icon != nil)
         {
             button.image = icon;
@@ -5091,7 +5301,7 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
     [mainMenu addItem:editMenuItem];
     [NSApp setMainMenu:mainMenu];
 
-    self.rendererStatus.stringValue = [NSString stringWithFormat:@"Metal | %s",
+    self.rendererStatus.stringValue = [NSString stringWithFormat:@"AppKit scene | GPU: %s",
         g_gpu.summary[0] != '\0' ? g_gpu.summary : "GPU probe unavailable"];
 }
 
@@ -5273,6 +5483,175 @@ static int WcSelectedSketchSupport(WcCocoaSketchSupport *support)
 /* C ABI entry points.                                                 */
 /* ------------------------------------------------------------------ */
 
+
+#pragma mark - NX-style menu bar
+
+/* Mirrors the GTK4 menu bar: identical semantic command mapping, honest
+ * disabled entries for planned commands. */
+enum {
+    WC_MENU_NEW_PART = 0, WC_MENU_RUN_JOURNAL, WC_MENU_RUN_SCRIPT,
+    WC_MENU_RECORD_JOURNAL, WC_MENU_SCREENSHOT, WC_MENU_QUIT,
+    WC_MENU_DELETE_FEATURE, WC_MENU_EDIT_FEATURE,
+    WC_MENU_MOVE_UP, WC_MENU_MOVE_DOWN,
+    WC_MENU_FIT_ALL, WC_MENU_FIT_SELECTED, WC_MENU_TOGGLE_COMPACT, WC_MENU_FOCUS_COMMAND,
+    WC_MENU_NEW_SKETCH, WC_MENU_BOX, WC_MENU_CYLINDER, WC_MENU_SPHERE,
+    WC_MENU_DATUM_CSYS, WC_MENU_MASS_PROPERTIES, WC_MENU_ABOUT,
+    WC_MENU_UNDO, WC_MENU_REDO
+};
+
+@implementation WcAppDelegate (WcMenuBar)
+
+- (NSMenuItem *)menuItem:(NSString *)title action:(NSInteger)action enabled:(BOOL)enabled
+{
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title
+                                                  action:@selector(menuBarAction:)
+                                           keyEquivalent:@""];
+    item.target = self;
+    item.tag = action;
+    item.enabled = enabled;
+    return item;
+}
+
+- (void)installMainMenu
+{
+    NSMenu *mainMenu = [[NSMenu alloc] init];
+
+    NSMenu *file = [[NSMenu alloc] initWithTitle:@"File"];
+    [file addItem:[self menuItem:@"New Part…" action:WC_MENU_NEW_PART enabled:YES]];
+    [file addItem:[self menuItem:@"Run Journal…" action:WC_MENU_RUN_JOURNAL enabled:YES]];
+    [file addItem:[self menuItem:@"Run Script…" action:WC_MENU_RUN_SCRIPT enabled:YES]];
+    [file addItem:[self menuItem:@"Record Journal…" action:WC_MENU_RECORD_JOURNAL enabled:YES]];
+    [file addItem:[self menuItem:@"Screenshot" action:WC_MENU_SCREENSHOT enabled:YES]];
+    [file addItem:[NSMenuItem separatorItem]];
+    [file addItem:[self menuItem:@"Quit" action:WC_MENU_QUIT enabled:YES]];
+
+    NSMenu *edit = [[NSMenu alloc] initWithTitle:@"Edit"];
+    [edit addItem:[self menuItem:@"Undo" action:WC_MENU_UNDO enabled:YES]];
+    [edit addItem:[self menuItem:@"Redo" action:WC_MENU_REDO enabled:YES]];
+    [edit addItem:[self menuItem:@"Edit Feature…" action:WC_MENU_EDIT_FEATURE enabled:YES]];
+    [edit addItem:[self menuItem:@"Delete Feature" action:WC_MENU_DELETE_FEATURE enabled:YES]];
+    [edit addItem:[self menuItem:@"Move Feature Up" action:WC_MENU_MOVE_UP enabled:YES]];
+    [edit addItem:[self menuItem:@"Move Feature Down" action:WC_MENU_MOVE_DOWN enabled:YES]];
+
+    NSMenu *view = [[NSMenu alloc] initWithTitle:@"View"];
+    [view addItem:[self menuItem:@"Fit All" action:WC_MENU_FIT_ALL enabled:YES]];
+    [view addItem:[self menuItem:@"Fit Selected" action:WC_MENU_FIT_SELECTED enabled:YES]];
+    [view addItem:[self menuItem:@"Toggle Compact Ribbon" action:WC_MENU_TOGGLE_COMPACT enabled:YES]];
+    [view addItem:[self menuItem:@"Command Line" action:WC_MENU_FOCUS_COMMAND enabled:YES]];
+
+    NSMenu *insert = [[NSMenu alloc] initWithTitle:@"Insert"];
+    [insert addItem:[self menuItem:@"Sketch" action:WC_MENU_NEW_SKETCH enabled:YES]];
+    [insert addItem:[self menuItem:@"Box" action:WC_MENU_BOX enabled:YES]];
+    [insert addItem:[self menuItem:@"Cylinder" action:WC_MENU_CYLINDER enabled:YES]];
+    [insert addItem:[self menuItem:@"Sphere" action:WC_MENU_SPHERE enabled:YES]];
+    [insert addItem:[self menuItem:@"Datum CSYS" action:WC_MENU_DATUM_CSYS enabled:YES]];
+
+    NSMenu *tools = [[NSMenu alloc] initWithTitle:@"Tools"];
+    [tools addItem:[self menuItem:@"Mass Properties" action:WC_MENU_MASS_PROPERTIES enabled:YES]];
+
+    NSMenu *help = [[NSMenu alloc] initWithTitle:@"Help"];
+    [help addItem:[self menuItem:@"About WaifuCAD" action:WC_MENU_ABOUT enabled:YES]];
+
+    NSArray *menus = @[file, edit, view, insert, tools, help];
+    for (NSMenu *menu in menus)
+    {
+        NSMenuItem *top = [[NSMenuItem alloc] initWithTitle:menu.title action:NULL keyEquivalent:@""];
+        top.submenu = menu;
+        [mainMenu addItem:top];
+    }
+    [NSApp setMainMenu:mainMenu];
+}
+
+- (void)menuBarAction:(NSMenuItem *)sender
+{
+    char command[512];
+    if (sender.tag < 0)
+        return;
+    switch (sender.tag)
+    {
+        case WC_MENU_NEW_PART:
+        {
+            NSAlert *alert = [[NSAlert alloc] init];
+            alert.messageText = @"Start a new part?";
+            alert.informativeText = @"The current model will be reinitialised.";
+            [alert addButtonWithTitle:@"Cancel"];
+            [alert addButtonWithTitle:@"New Part"];
+            if ([alert runModal] == NSAlertSecondButtonReturn)
+                [self submitLine:"model(:new_part)"];
+            break;
+        }
+        case WC_MENU_RUN_JOURNAL:    [self runRibbonCommand:"modelling.run_journal"]; break;
+        case WC_MENU_RUN_SCRIPT:     [self runRibbonCommand:"modelling.run_script"]; break;
+        case WC_MENU_RECORD_JOURNAL: [self runRibbonCommand:"modelling.journal_record"]; break;
+        case WC_MENU_SCREENSHOT:     [self submitLine:"screenshot(\"waifucad_view.png\")"]; break;
+        case WC_MENU_QUIT:           [NSApp terminate:nil]; break;
+        case WC_MENU_UNDO:           [self submitLine:"undo"]; break;
+        case WC_MENU_REDO:           [self submitLine:"redo"]; break;
+        case WC_MENU_DELETE_FEATURE:
+            [self runFeatureAction:g_state.selected_feature_id action:0];
+            break;
+        case WC_MENU_EDIT_FEATURE:
+            if (g_state.selected_feature_id != 0 && g_callbacks.feature_dialogue_for_feature != NULL)
+            {
+                const WcFeatureDialogueDescriptorV1 *d =
+                    g_callbacks.feature_dialogue_for_feature(g_userData, g_state.selected_feature_id);
+                if (d != NULL)
+                    [self showFeatureDialogue:d featureId:g_state.selected_feature_id];
+            }
+            else [self setCommandStatus:@"Select a model-history feature first"];
+            break;
+        case WC_MENU_MOVE_UP:
+        case WC_MENU_MOVE_DOWN:
+            if (g_state.selected_feature_id != 0 && g_state.selected_feature_name[0] != '\0')
+            {
+                (void)snprintf(command, sizeof(command), "%s(:%s)",
+                               sender.tag == WC_MENU_MOVE_UP ? "feature_move_up" : "feature_move_down",
+                               g_state.selected_feature_name);
+                [self submitLine:command];
+            }
+            else [self setCommandStatus:@"Select a model-history feature first"];
+            break;
+        case WC_MENU_FIT_ALL: [self viewportFitAll:nil]; break;
+        case WC_MENU_FIT_SELECTED:
+            if (WcFitFeature(g_state.selected_feature_id))
+                [self setCommandStatus:@"Fit — selected body"];
+            else
+                [self setCommandStatus:@"No selected body with display bounds"];
+            [self.graphicsView setNeedsDisplay:YES];
+            break;
+        case WC_MENU_TOGGLE_COMPACT:
+            g_state.ribbon_density = g_state.ribbon_density == 2 ? 0 : 2;
+            [self rebuildRibbon];
+            break;
+        case WC_MENU_FOCUS_COMMAND:
+            [self.window makeFirstResponder:self.commandField];
+            break;
+        case WC_MENU_NEW_SKETCH: [self beginNewSketch]; break;
+        case WC_MENU_BOX:        [self submitLine:"box(:body, 80.mm, 50.mm, 10.mm)"]; break;
+        case WC_MENU_CYLINDER:   [self submitLine:"cylinder(:body, 20.mm, 40.mm)"]; break;
+        case WC_MENU_SPHERE:     [self submitLine:"sphere(:body, 25.mm)"]; break;
+        case WC_MENU_DATUM_CSYS: [self submitLine:"datum_csys(:new_csys, 0, 0, 0, 1, 0, 0, 0, 1, 0)"]; break;
+        case WC_MENU_MASS_PROPERTIES:
+            if (g_state.selected_feature_id != 0)
+                [self showMassProperties:g_state.selected_feature_id];
+            else
+                [self setCommandStatus:@"Select a feature first"];
+            break;
+        case WC_MENU_ABOUT:
+        {
+            NSAlert *alert = [[NSAlert alloc] init];
+            alert.messageText = @"WaifuCAD — 64-bit-only parametric CAD";
+            alert.informativeText = [NSString stringWithFormat:@"%s",
+                g_gpu.summary[0] != '\0' ? g_gpu.summary : "GPU probe unavailable"];
+            [alert runModal];
+            break;
+        }
+        default: break;
+    }
+}
+
+@end
+
 int wc_cocoa_native_available(void)
 {
     return 1;
@@ -5335,6 +5714,7 @@ int wc_cocoa_run(const WcCocoaWindowConfig *config,
         WcAppDelegate *delegate = [[WcAppDelegate alloc] init];
         g_delegate = delegate;
         [NSApp setDelegate:delegate];
+        [delegate installMainMenu];
         [delegate buildUiWithConfig:config];
         [delegate rebuildRibbon];
         [delegate updateStatus];

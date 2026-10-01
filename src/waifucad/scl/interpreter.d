@@ -5,6 +5,7 @@ import core.stdc.stdio : FILE, fopen, fclose, fgets, fprintf, snprintf, stderr, 
 import core.stdc.stdlib : strtod;
 import core.stdc.string : strcmp, strlen;
 import waifucad.journal.backend_api : ScriptContext;
+import waifucad.journal.undo : UndoStatus;
 import waifucad.journal.script_runtime : ScriptValue, ScriptValueKind, ScriptCallableKind, WC_SCRIPT_MAX_LIST_VALUES;
 import waifucad.scl.runtime_ops : applyBinaryOperator, applyUnaryOperator, applyMathFunction, typeTest;
 import waifucad.kernel.types : EntityId, Unit, FeatureKind, Operand, OperandKind, SketchConstraintKind, WC_MAX_FEATURE_OPERANDS;
@@ -564,6 +565,53 @@ private int executeTokens(ScriptContext* context, Tokens* tokens, const(char)* o
         auto result = executeFile(context, tokens.values[1]);
         context.recordCommands = wasRecording && context.journal !is null && context.journal.recording;
         return result;
+    }
+
+    /*
+     * Undo/redo transaction log control (1000..1014).  undo_enable/undo_disable/
+     * undo_clear configure interpreter state and are not journalled.  undo and
+     * redo change the document, so they are journalled after they succeed and a
+     * replay with undo enabled reproduces the same history.
+     */
+    if (strcmp(command, "undo_enable".ptr) == 0)
+    {
+        if (context.undo is null) return 1000;
+        uint depth = 0;
+        if (tokens.count >= 2 && !parseUnsignedNumber(tokens.values[1], &depth)) return 1001;
+        context.undo.enable(depth);
+        return 0;
+    }
+    if (strcmp(command, "undo_disable".ptr) == 0)
+    {
+        if (context.undo is null) return 1000;
+        context.undo.disable();
+        return 0;
+    }
+    if (strcmp(command, "undo_clear".ptr) == 0)
+    {
+        if (context.undo is null) return 1000;
+        context.undo.clear();
+        return 0;
+    }
+    immutable isUndoCommand = strcmp(command, "undo".ptr) == 0;
+    if (isUndoCommand || strcmp(command, "redo".ptr) == 0)
+    {
+        if (context.undo is null) return 1000;
+        uint count = 1;
+        if (tokens.count >= 2 && (!parseUnsignedNumber(tokens.values[1], &count) || count == 0)) return 1001;
+        if (!context.undo.isEnabled()) return 1010 + cast(int)UndoStatus.disabled;
+        if (context.undo.inTransactionNow()) return 1010 + cast(int)UndoStatus.inTransaction;
+        immutable available = isUndoCommand ? context.undo.undoDepth() : context.undo.redoDepth();
+        if (count > available) return 1010 + cast(int)UndoStatus.nothingToDo;
+        foreach (step; 0 .. count)
+        {
+            auto status = isUndoCommand ? context.undo.undo(context.model, context.pmi)
+                                        : context.undo.redo(context.model, context.pmi);
+            if (status != UndoStatus.ok) return 1010 + cast(int)status;
+        }
+        if (context.recordCommands && context.journal !is null)
+            context.journal.record(originalLine);
+        return 0;
     }
 
     /* Run Script expands through the same interpreter transaction path.  Do
@@ -2281,6 +2329,32 @@ private int executeTokens(ScriptContext* context, Tokens* tokens, const(char)* o
     return 400;
 }
 
+/*
+ * A top-level line is an undo transaction unless it is read-only, pure
+ * control/transport, or a wrapper that expands into further top-level lines
+ * (include/use/journal_run), in which case each expanded line is its own
+ * transaction so journal replay reproduces the same undo granularity.  Lines
+ * that turn out not to change the document are discarded by the undo log.
+ */
+private bool tracksUndo(ScriptContext* context, Tokens* tokens) nothrow @nogc
+{
+    if (context.undo is null || !context.undo.isEnabled() || tokens.count == 0)
+        return false;
+    auto command = tokens.values[0];
+    if (command[0] == 'g' && command[1] == 'e' && command[2] == 't' && command[3] == '_')
+        return false;
+    static immutable const(char)*[] untracked = [
+        "waifucad".ptr, "journal_start".ptr, "journal_stop".ptr, "journal_run".ptr,
+        "include".ptr, "use".ptr, "screenshot".ptr, "echo".ptr, "echo_value".ptr,
+        "assert".ptr, "recompute".ptr, "scad_export".ptr,
+        "undo".ptr, "redo".ptr, "undo_enable".ptr, "undo_disable".ptr, "undo_clear".ptr
+    ];
+    foreach (name; untracked)
+        if (strcmp(command, name) == 0)
+            return false;
+    return true;
+}
+
 int executeLine(ScriptContext* context, char* line) nothrow @nogc
 {
     if (context is null || context.model is null || line is null)
@@ -2306,7 +2380,13 @@ int executeLine(ScriptContext* context, char* line) nothrow @nogc
     }
 
     auto tokens = tokenise(normalised.ptr);
-    return executeTokens(context, &tokens, original.ptr);
+    if (!tracksUndo(context, &tokens))
+        return executeTokens(context, &tokens, original.ptr);
+
+    context.undo.begin(context.model, context.pmi);
+    auto result = executeTokens(context, &tokens, original.ptr);
+    context.undo.end(context.model, context.pmi);
+    return result;
 }
 
 int executeFile(ScriptContext* context, const(char)* path) nothrow @nogc
@@ -2384,3 +2464,59 @@ int executeUseFile(ScriptContext* context, const(char)* path) nothrow @nogc
 
 
 
+
+/** Human-readable detail for an SCL status code. BetterC-safe static table;
+ * unknown codes fall back to a range-based family message. */
+const(char)* sclErrorText(int code) nothrow @nogc
+{
+    static struct Entry { int code; const(char)* text; }
+    static immutable Entry[] entries = [
+        {10, "echo: unterminated string"}, {11, "echo: string too long"}, {12, "echo: invalid payload"},
+        {20, "model: missing part name"},
+        {21, "param: invalid parameter name"}, {22, "param: invalid value or unit"},
+        {24, "set: unknown target"}, {25, "set: invalid value"},
+        {27, "param_expr: invalid unit or formula (check names and unit spelling)"},
+        {29, "set_expr: invalid expression"},
+        {30, "sketch: missing name or support"}, {31, "sketch: unknown datum plane or CSYS plane"},
+        {32, "sketch_line: wrong argument count"}, {33, "sketch_line: invalid co-ordinates"},
+        {35, "sketch_arc: wrong argument count"}, {36, "sketch_arc: invalid centre/radius/sweep"},
+        {38, "sketch_circle: wrong argument count"}, {39, "sketch_circle: invalid centre or radius"},
+        {40, "sketch_circle: radius must be positive"},
+        {42, "sketch_rect: wrong argument count"}, {43, "sketch_rect: invalid width or depth"},
+        {44, "sketch_rect: dimensions must be positive"},
+        {50, "sketch_text: wrong argument count"}, {51, "sketch_text: invalid anchor"}, {52, "sketch_text: text too long"},
+        {60, "point: invalid co-ordinates"}, {61, "point: wrong argument count"},
+        {63, "line: wrong argument count"}, {64, "line: invalid end points"},
+        {66, "arc: wrong argument count"}, {67, "arc: invalid radius or sweep"},
+        {69, "curve_circle: wrong argument count"}, {70, "curve_circle: invalid radius"},
+        {72, "spline_bbox: wrong argument count"}, {73, "spline_bbox: invalid bounding box"},
+        {75, "scad_import: missing file name"}, {76, "scad_import: file not found"},
+        {77, "scad_import: parse failed"}, {78, "scad_import: import produced no body"},
+        {115, "cylinder: kernel rejected the feature (check radius/height)"},
+        {116, "sphere: missing radius"}, {117, "sphere: invalid radius"},
+        {118, "sphere: kernel rejected the feature"},
+        {162, "operand error: an argument could not be resolved - check feature/parameter names, unit suffixes and expressions"},
+        {803, "feature_delete: feature not found or still referenced by another feature"},
+        {804, "feature_move_up: missing feature name"}, {805, "feature_move_up: feature not found"},
+        {806, "feature_move_up: move rejected - dependency order must be preserved"},
+        {807, "feature_move_down: missing feature name"}, {808, "feature_move_down: feature not found"},
+        {809, "feature_move_down: move rejected - dependency order must be preserved"},
+        {820, "feature_edit: feature not found or unsupported redefinition"},
+        {910, "screenshot: missing output path"}, {911, "screenshot: no model loaded"},
+        {912, "screenshot: invalid yaw"}, {913, "screenshot: invalid pitch"}, {914, "screenshot: invalid roll"},
+        {1000, "undo: no undo log is attached to this session"},
+        {1001, "undo: invalid step count (expected a positive whole number)"},
+        {1011, "undo/redo: the undo log is disabled - run undo_enable first"},
+        {1012, "undo/redo: nothing to undo or redo"},
+        {1013, "undo/redo: not permitted inside a running transaction"},
+        {1014, "undo/redo: out of memory while capturing document state"},
+    ];
+    foreach (entry; entries)
+        if (entry.code == code)
+            return entry.text;
+    if (code >= 100 && code < 200) return "modelling primitive failed - check its arguments";
+    if (code >= 800 && code < 900) return "model-history edit rejected - check names and dependencies";
+    if (code >= 1000 && code < 1100) return "undo/redo operation failed";
+    if (code >= 900) return "render or screenshot operation failed";
+    return "command failed - check argument count, names and units";
+}

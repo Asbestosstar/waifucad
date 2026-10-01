@@ -1,0 +1,65 @@
+# Undo/redo transaction log regression.  Every echoed value is compared with
+# tests/undo_redo.expected by tests/smoke.sh.
+undo_enable()
+model(:undo_redo)
+count = get_feature_count()
+echo_value(:count)
+box(:a, 10.mm, 10.mm, 10.mm)
+box(:b, 20.mm, 20.mm, 20.mm)
+count = get_feature_count()
+echo_value(:count)
+depth = get_undo_depth()
+echo_value(:depth)
+
+# Read-only lines, echo and recompute never consume undo levels.
+recompute()
+echo_value(:count)
+depth = get_undo_depth()
+echo_value(:depth)
+
+undo()
+count = get_feature_count()
+echo_value(:count)
+redo_depth = get_redo_depth()
+echo_value(:redo_depth)
+redo()
+count = get_feature_count()
+echo_value(:count)
+name = get_feature_name(2)
+echo_value(:name)
+
+# Multi-step undo/redo, and redo-branch invalidation by a new edit.
+undo(2)
+count = get_feature_count()
+echo_value(:count)
+redo(2)
+count = get_feature_count()
+echo_value(:count)
+undo()
+box(:c, 5.mm, 5.mm, 5.mm)
+redo_depth = get_redo_depth()
+echo_value(:redo_depth)
+name = get_feature_name(2)
+echo_value(:name)
+
+# PMI is part of the same document state.
+pmi_add(:note, :n1, "hello", :none)
+pmi = get_pmi_count()
+echo_value(:pmi)
+undo()
+pmi = get_pmi_count()
+echo_value(:pmi)
+redo()
+pmi = get_pmi_count()
+echo_value(:pmi)
+
+# Parameter edits are rolled back to the previous value.
+param(:width, 40.mm)
+set(:width, 50)
+undo()
+width_value = get_parameter_value(:width)
+echo_value(:width_value)
+
+undo_clear()
+depth = get_undo_depth()
+echo_value(:depth)

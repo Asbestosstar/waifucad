@@ -77,7 +77,7 @@
 - [x] Define persistent topological naming strategy for current exact feature-derived topology.
 - [x] Add persistent topology lineage for implemented line/face splits, constrained face merge, box booleans and generated shell topology.
 - [ ] Propagate persistent lineage through general boolean imprint/stitch operations and deterministic save/load identity.
-- [ ] Add undo/redo transaction log.
+- [x] Add undo/redo transaction log (snapshot swap log, SCL `undo`/`redo`/`undo_enable`, GUI Edit menu).
 - [ ] Add deterministic document serialisation.
 - [x] Add the in-tree WaifuBRep kernel behind `GeometryBackendV1`.
 - [x] Implement exact manifold box topology and closed-solid validation.

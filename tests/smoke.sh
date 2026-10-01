@@ -43,6 +43,7 @@ fi
 sh ./tests/brep_naming.sh
 ./tests/scl_ruby_syntax.sh
 ./tests/brep_inertia.sh
+./tests/ribbon_search.sh
 
 ./tests/native_threads.sh
 ./tests/gtk4_native_syntax.sh
@@ -221,3 +222,22 @@ echo "WaifuCAD smoke test passed."
 
 
 
+
+# Undo/redo transaction log: exact state swaps, opt-in in batch, journalled and replayable.
+./bin/waifucad-batch --script tests/undo_redo.wcs > build/obj/undo-redo.txt
+diff -u tests/undo_redo.expected build/obj/undo-redo.txt
+./bin/waifucad-batch --script tests/undo_redo.wcs --journal-out build/obj/undo-redo.scl > /dev/null
+./bin/waifucad-batch --script tests/undo_redo.wcs --dump-model > build/obj/undo-redo-live.txt
+# Script variables are interpreter state and are not journalled, so drop the echo lines before replay.
+grep -v '^echo_value' build/obj/undo-redo.scl > build/obj/undo-redo-replayable.scl
+./bin/waifucad-batch --journal-in build/obj/undo-redo-replayable.scl --dump-model > build/obj/undo-redo-replay.txt
+grep -qF 'undo()' build/obj/undo-redo.scl
+grep -qF 'redo(2)' build/obj/undo-redo.scl
+! grep -q 'undo_enable' build/obj/undo-redo.scl
+# The replay leaves the same features as the live session (ignore echoed values).
+grep '^  #' build/obj/undo-redo-live.txt > build/obj/undo-redo-live-features.txt
+grep '^  #' build/obj/undo-redo-replay.txt > build/obj/undo-redo-replay-features.txt
+diff -u build/obj/undo-redo-live-features.txt build/obj/undo-redo-replay-features.txt
+if ./bin/waifucad-batch --command 'undo()' 2>/dev/null; then exit 1; fi
+if ./bin/waifucad-batch --undo --command 'undo()' 2>/dev/null; then exit 1; fi
+python3 tests/undo_redo_static.py

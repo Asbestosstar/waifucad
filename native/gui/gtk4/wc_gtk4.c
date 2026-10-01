@@ -118,6 +118,7 @@ struct WcGtk4State {
     GtkWidget *command_status;
     GtkWidget *model_status;
     GtkWidget *section_status;
+    GtkWidget *cursor_status;
     GtkWidget *renderer_status;
     GtkWidget *model_name_label;
     GtkWidget *model_list;
@@ -129,6 +130,11 @@ struct WcGtk4State {
     GtkWidget *ribbon_commands_box;
     GtkWidget *ribbon_scroller;
     GtkWidget *ribbon_waifu;
+    GtkWidget *ribbon_search_entry;
+    GtkWidget *ribbon_search_popover;
+    GtkWidget *ribbon_search_results;
+    WcGtk4RibbonCommand ribbon_search_matches[12];
+    size_t ribbon_search_match_count;
     WcGpuProbe gpu;
 
     char active_ribbon_tab[WC_UI_ID_CAPACITY];
@@ -1960,6 +1966,9 @@ static void set_command_text(WcGtk4State *state, const char *text, const char *s
     gtk_widget_grab_focus(state->command_entry);
 }
 
+static void report_scl_error(WcGtk4State *state, int code, const char *command);
+static void menu_new_part_response_cb(GObject *source, GAsyncResult *result, gpointer user_data);
+static void free_signal_data(gpointer data, GClosure *closure);
 static void rebuild_ribbon(WcGtk4State *state);
 static void refresh_model_navigator(WcGtk4State *state);
 static void ribbon_tab_clicked_cb(GtkButton *button, gpointer user_data);
@@ -1978,12 +1987,13 @@ static void command_activate_cb(GtkEntry *entry, gpointer user_data)
     (void)snprintf(mutable_command, sizeof(mutable_command), "%s", text);
     if (state->callbacks != NULL && state->callbacks->submit_command != NULL)
         status = state->callbacks->submit_command(state->user_data, mutable_command);
-    if (status == 0)
+    if (status == 0) {
         (void)snprintf(message, sizeof(message), "Command complete — press Esc for viewport navigation");
-    else
-        (void)snprintf(message, sizeof(message), "SCL error %d", status);
-    gtk_label_set_text(GTK_LABEL(state->command_status), message);
-    if (status == 0) gtk_editable_set_text(GTK_EDITABLE(entry), "");
+        gtk_label_set_text(GTK_LABEL(state->command_status), message);
+        gtk_editable_set_text(GTK_EDITABLE(entry), "");
+    } else {
+        report_scl_error(state, status, text);
+    }
     update_status(state);
     gtk_widget_queue_draw(state->drawing_area);
 }
@@ -2875,6 +2885,35 @@ static void ribbon_command_clicked_cb(GtkButton *button, gpointer user_data)
         return;
     }
 
+    /* File tab: NX-style application-level actions, handled natively. */
+    if (strcmp(data->id, "modelling.new_part") == 0) {
+        GtkAlertDialog *confirm = gtk_alert_dialog_new(
+            "Start a new part? The current model will be reinitialised.");
+        gtk_alert_dialog_set_buttons(confirm, (const char *[]){"Cancel", "New Part", NULL});
+        gtk_alert_dialog_set_cancel_button(confirm, 0);
+        gtk_alert_dialog_set_default_button(confirm, 0);
+        gtk_alert_dialog_choose(confirm, GTK_WINDOW(data->state->window), NULL,
+                                menu_new_part_response_cb, data->state);
+        g_object_unref(confirm);
+        return;
+    }
+    if (strcmp(data->id, "modelling.open_part") == 0) {
+        open_path_chooser(data->state, GTK_WINDOW(data->state->window), NULL,
+                          WC_PATH_CHOOSER_RUN_SCRIPT, "Open Part",
+                          GTK_FILE_CHOOSER_ACTION_OPEN, "script", NULL);
+        return;
+    }
+    if (strcmp(data->id, "modelling.save_part") == 0) {
+        open_path_chooser(data->state, GTK_WINDOW(data->state->window), NULL,
+                          WC_PATH_CHOOSER_START_JOURNAL, "Save Part",
+                          GTK_FILE_CHOOSER_ACTION_SAVE, "journal", "part.wjournal");
+        return;
+    }
+    if (strcmp(data->id, "modelling.exit") == 0) {
+        gtk_window_close(GTK_WINDOW(data->state->window));
+        return;
+    }
+
     if (data->state->callbacks != NULL &&
         data->state->callbacks->feature_dialogue != NULL)
         dialogue = data->state->callbacks->feature_dialogue(data->state->user_data, data->id);
@@ -2908,6 +2947,113 @@ static void ribbon_command_clicked_cb(GtkButton *button, gpointer user_data)
     update_status(data->state);
     gtk_widget_queue_draw(data->state->drawing_area);
     gtk_label_set_text(GTK_LABEL(data->state->command_status), "Ribbon action completed");
+}
+
+/* -- ribbon command search (NX-style "tell me" box) ---------------------- */
+/* Matching/ranking/flag policy live once in the shared D implementation
+   (waifucad.gui.ribbon_search) behind the ribbon_search ABI callback; GTK4
+   only owns this entry box and the results popover. */
+
+static void ribbon_search_dismiss(WcGtk4State *state)
+{
+    if (state != NULL && state->ribbon_search_popover != NULL &&
+        gtk_widget_is_visible(state->ribbon_search_popover))
+        gtk_popover_popdown(GTK_POPOVER(state->ribbon_search_popover));
+}
+
+static void ribbon_search_result_clicked_cb(GtkButton *button, gpointer user_data)
+{
+    WcRibbonButtonData *data = (WcRibbonButtonData *)user_data;
+    if (data == NULL || data->state == NULL)
+        return;
+    ribbon_search_dismiss(data->state);
+    gtk_editable_set_text(GTK_EDITABLE(data->state->ribbon_search_entry), "");
+    /* Reuse the exact ribbon activation path so a search hit behaves
+       identically to clicking the command's own ribbon button. */
+    ribbon_command_clicked_cb(button, user_data);
+}
+
+static void ribbon_search_update(WcGtk4State *state)
+{
+    const char *query;
+    size_t count;
+    size_t i;
+    if (state == NULL || state->ribbon_search_entry == NULL ||
+        state->ribbon_search_results == NULL ||
+        state->callbacks == NULL || state->callbacks->ribbon_search == NULL)
+        return;
+    query = gtk_editable_get_text(GTK_EDITABLE(state->ribbon_search_entry));
+    if (query == NULL || query[0] == '\0') {
+        ribbon_search_dismiss(state);
+        return;
+    }
+    count = state->callbacks->ribbon_search(state->user_data, query,
+                                            state->ribbon_search_matches, 12u);
+    state->ribbon_search_match_count = count;
+    if (count == 0) {
+        ribbon_search_dismiss(state);
+        gtk_label_set_text(GTK_LABEL(state->command_status),
+                           "No ribbon command matches the search text");
+        return;
+    }
+
+    clear_children(state->ribbon_search_results);
+    for (i = 0; i < count; ++i) {
+        char label[192];
+        char hint[96];
+        GtkWidget *button;
+        WcRibbonButtonData *data;
+        humanise_identifier(state->ribbon_search_matches[i].id, label, sizeof(label));
+        humanise_identifier(state->ribbon_search_matches[i].tab_id != NULL ?
+                            state->ribbon_search_matches[i].tab_id : "", hint, sizeof(hint));
+        (void)strncat(label, "   —   ", sizeof(label) - strlen(label) - 1);
+        (void)strncat(label, hint, sizeof(label) - strlen(label) - 1);
+        button = gtk_button_new_with_label(label);
+        gtk_widget_add_css_class(button, "wc-ribbon-search-row");
+        gtk_widget_set_halign(button, GTK_ALIGN_FILL);
+        if ((state->ribbon_search_matches[i].flags & WC_RIBBON_FLAG_PLANNED) != 0u) {
+            gtk_widget_set_sensitive(button, FALSE);
+            gtk_widget_set_tooltip_text(button, "Planned command — data model is not implemented yet");
+        }
+        data = g_new0(WcRibbonButtonData, 1);
+        data->state = state;
+        copy_text(data->id, sizeof(data->id), state->ribbon_search_matches[i].id);
+        g_signal_connect_data(button, "clicked", G_CALLBACK(ribbon_search_result_clicked_cb),
+                              data, free_signal_data, 0);
+        gtk_box_append(GTK_BOX(state->ribbon_search_results), button);
+    }
+    gtk_widget_set_visible(state->ribbon_search_results, TRUE);
+    if (gtk_widget_get_mapped(state->ribbon_search_entry) &&
+        !gtk_widget_is_visible(state->ribbon_search_popover))
+        gtk_popover_popup(GTK_POPOVER(state->ribbon_search_popover));
+}
+
+static void ribbon_search_changed_cb(GtkSearchEntry *entry, gpointer user_data)
+{
+    (void)entry;
+    ribbon_search_update((WcGtk4State *)user_data);
+}
+
+static void ribbon_search_activate_cb(GtkSearchEntry *entry, gpointer user_data)
+{
+    WcGtk4State *state = (WcGtk4State *)user_data;
+    WcRibbonButtonData data;
+    (void)entry;
+    if (state == NULL || state->ribbon_search_match_count == 0)
+        return;
+    memset(&data, 0, sizeof(data));
+    data.state = state;
+    copy_text(data.id, sizeof(data.id), state->ribbon_search_matches[0].id);
+    ribbon_search_dismiss(state);
+    gtk_editable_set_text(GTK_EDITABLE(state->ribbon_search_entry), "");
+    ribbon_command_clicked_cb(NULL, &data);
+}
+
+static void ribbon_search_stop_cb(GtkSearchEntry *entry, gpointer user_data)
+{
+    WcGtk4State *state = (WcGtk4State *)user_data;
+    (void)entry;
+    ribbon_search_dismiss(state);
 }
 
 static int ribbon_has_tab(const WcGtk4RibbonSnapshot *ribbon, const char *tab_id)
@@ -2947,8 +3093,8 @@ static GtkWidget *make_ribbon_command_button(WcGtk4State *state, const WcGtk4Rib
     const char *template_text = "";
     const WcFeatureDialogueDescriptorV1 *dialogue = NULL;
     humanise_identifier(command->id, label, sizeof(label));
-    button = make_icon_text_button(command->icon_name, label, compact ? 22 : 34);
-    gtk_widget_set_size_request(button, compact ? 58 : 82, compact ? 50 : 76);
+    button = make_icon_text_button(command->icon_name, label, compact ? 20 : 28);
+    gtk_widget_set_size_request(button, compact ? 52 : 70, compact ? 44 : 62);
     if (compact)
         gtk_widget_add_css_class(button, "wc-ribbon-command-compact");
     data = g_new0(WcRibbonButtonData, 1);
@@ -3029,8 +3175,8 @@ static void build_sections_ribbon_commands(WcGtk4State *state)
             row_count = 0;
         }
         humanise_identifier(entries[i].id, label, sizeof(label));
-        button = make_icon_text_button(entries[i].icon_name, label, state->ribbon_density > 0 ? 22 : 30);
-        gtk_widget_set_size_request(button, state->ribbon_density > 0 ? 62 : 80, state->ribbon_density > 0 ? 50 : 70);
+        button = make_icon_text_button(entries[i].icon_name, label, state->ribbon_density > 0 ? 20 : 26);
+        gtk_widget_set_size_request(button, state->ribbon_density > 0 ? 56 : 64, state->ribbon_density > 0 ? 44 : 56);
         data = g_new0(WcSectionButtonData, 1);
         data->state = state;
         copy_text(data->id, sizeof(data->id), entries[i].id);
@@ -3050,7 +3196,7 @@ static void build_mods_ribbon_commands(WcGtk4State *state)
 {
     GtkWidget *frame = gtk_frame_new(NULL);
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
-    GtkWidget *button = make_icon_text_button("tab_mods", "Manage Mods", 26);
+    GtkWidget *button = make_icon_text_button("tab_mods", "Manage Mods", 22);
     gtk_widget_add_css_class(frame, "wc-ribbon-group");
     gtk_widget_set_sensitive(button, FALSE);
     gtk_widget_set_tooltip_text(button, "Dynamic Mod discovery is still a P1 roadmap item; the versioned Mod ABI already exists");
@@ -3067,16 +3213,77 @@ static void append_scripts_home_group(WcGtk4State *state)
     GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 1);
     GtkWidget *button;
     gtk_widget_add_css_class(frame, "wc-ribbon-group");
-    button = make_icon_text_button("cmd_script", "Run Script", state->ribbon_density > 0 ? 22 : 30);
+    button = make_icon_text_button("cmd_script", "Run Script", state->ribbon_density > 0 ? 20 : 26);
     g_signal_connect(button, "clicked", G_CALLBACK(scripts_prepare_clicked_cb), state);
     gtk_box_append(GTK_BOX(row), button);
-    button = make_icon_text_button("cmd_command", "Command Line", state->ribbon_density > 0 ? 22 : 30);
+    button = make_icon_text_button("cmd_command", "Command Line", state->ribbon_density > 0 ? 20 : 26);
     g_signal_connect(button, "clicked", G_CALLBACK(command_focus_clicked_cb), state);
     gtk_box_append(GTK_BOX(row), button);
     gtk_box_append(GTK_BOX(outer), row);
     gtk_box_append(GTK_BOX(outer), make_label("Scripts", "wc-ribbon-group-label"));
     gtk_frame_set_child(GTK_FRAME(frame), outer);
     gtk_box_append(GTK_BOX(state->ribbon_commands_box), frame);
+}
+
+/* NX backstage-style File tab: six fixed group columns of vertical text menus. */
+static void build_file_ribbon_commands(WcGtk4State *state, const WcGtk4RibbonSnapshot *ribbon)
+{
+    static const char *file_groups[] = {
+        "group.file_new", "group.file_open", "group.file_save",
+        "group.file_import", "group.file_export", "group.file_exit"
+    };
+    size_t g;
+    if (state == NULL || ribbon == NULL)
+        return;
+    for (g = 0; g < sizeof(file_groups) / sizeof(file_groups[0]); ++g) {
+        GtkWidget *frame = gtk_frame_new(NULL);
+        GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+        GtkWidget *caption;
+        GtkWidget *menu;
+        char group_label[96];
+        size_t i;
+        int added = 0;
+        gtk_widget_add_css_class(frame, "wc-ribbon-group");
+        gtk_widget_add_css_class(frame, "wc-file-menu-group");
+        humanise_identifier(file_groups[g], group_label, sizeof(group_label));
+        caption = gtk_label_new(group_label);
+        gtk_widget_add_css_class(caption, "wc-ribbon-group-label");
+        gtk_widget_set_halign(caption, GTK_ALIGN_START);
+        gtk_box_append(GTK_BOX(outer), caption);
+        menu = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+        gtk_widget_add_css_class(menu, "wc-file-menu");
+        gtk_box_append(GTK_BOX(outer), menu);
+        for (i = 0; i < ribbon->command_count; ++i) {
+            const WcGtk4RibbonCommand *command = &ribbon->commands[i];
+            char label[96];
+            GtkWidget *button;
+            WcRibbonButtonData *data;
+            if (command->tab_id == NULL || strcmp(command->tab_id, "modelling.file") != 0 ||
+                command->group_id == NULL || strcmp(command->group_id, file_groups[g]) != 0)
+                continue;
+            humanise_identifier(command->id, label, sizeof(label));
+            button = gtk_button_new_with_label(label);
+            gtk_widget_add_css_class(button, "wc-file-menu-item");
+            gtk_widget_set_halign(button, GTK_ALIGN_FILL);
+            data = g_new0(WcRibbonButtonData, 1);
+            data->state = state;
+            copy_text(data->id, sizeof(data->id), command->id);
+            g_signal_connect_data(button, "clicked", G_CALLBACK(ribbon_command_clicked_cb), data,
+                                  free_signal_data, 0);
+            if ((command->flags & WC_RIBBON_FLAG_PLANNED) != 0u) {
+                gtk_widget_set_sensitive(button, FALSE);
+                gtk_widget_set_tooltip_text(button, "Planned command - data model is not implemented yet");
+            }
+            gtk_box_append(GTK_BOX(menu), button);
+            added = 1;
+        }
+        if (!added) {
+            gtk_widget_unparent(frame);
+            continue;
+        }
+        gtk_frame_set_child(GTK_FRAME(frame), outer);
+        gtk_box_append(GTK_BOX(state->ribbon_commands_box), frame);
+    }
 }
 
 static void build_ribbon_commands(WcGtk4State *state, const WcGtk4RibbonSnapshot *ribbon)
@@ -3096,6 +3303,10 @@ static void build_ribbon_commands(WcGtk4State *state, const WcGtk4RibbonSnapshot
     }
     if (strcmp(state->active_ribbon_tab, "global.mods") == 0) {
         build_mods_ribbon_commands(state);
+        return;
+    }
+    if (strcmp(state->active_ribbon_tab, "modelling.file") == 0) {
+        build_file_ribbon_commands(state, ribbon);
         return;
     }
     if (ribbon == NULL) {
@@ -3146,8 +3357,8 @@ static void build_ribbon_commands(WcGtk4State *state, const WcGtk4RibbonSnapshot
 
 static GtkWidget *make_sketch_tool_button(const char *icon, const char *label, GCallback callback, WcGtk4State *state)
 {
-    GtkWidget *button = make_icon_text_button(icon, label, 24);
-    gtk_widget_set_size_request(button, 62, 52);
+    GtkWidget *button = make_icon_text_button(icon, label, 22);
+    gtk_widget_set_size_request(button, 56, 44);
     gtk_widget_add_css_class(button, "wc-ribbon-command-compact");
     g_signal_connect(button, "clicked", callback, state);
     return button;
@@ -3576,6 +3787,11 @@ static void viewport_motion_cb(GtkEventControllerMotion *controller, double x, d
     state->pointer_x = x;
     state->pointer_y = y;
     state->pointer_valid = 1;
+    if (state->cursor_status != NULL) {
+        char cursor_text[64];
+        (void)snprintf(cursor_text, sizeof(cursor_text), "Pointer %.0f, %.0f", x, y);
+        gtk_label_set_text(GTK_LABEL(state->cursor_status), cursor_text);
+    }
     width = gtk_widget_get_width(state->drawing_area);
     height = gtk_widget_get_height(state->drawing_area);
     if (state->sketch_mode) {
@@ -3658,6 +3874,14 @@ static gboolean key_pressed_cb(GtkEventControllerKey *controller, guint keyval, 
         case GDK_KEY_D:
             state->pan_x -= step;
             break;
+        case GDK_KEY_f:
+        case GDK_KEY_F:
+            fit_all(state);
+            break;
+        case GDK_KEY_slash:
+        case GDK_KEY_question:
+            gtk_widget_grab_focus(state->ribbon_search_entry);
+            break;
         case GDK_KEY_Home:
             state->zoom = 1.0;
             state->pan_x = 0.0;
@@ -3714,7 +3938,7 @@ static GtkWidget *make_rail_button(const char *icon_name, const char *tooltip)
     gtk_button_set_child(GTK_BUTTON(button), load_svg_image(icon_name, 24));
     gtk_widget_set_tooltip_text(button, tooltip);
     gtk_widget_add_css_class(button, "wc-rail-button");
-    gtk_widget_set_size_request(button, 42, 42);
+    gtk_widget_set_size_request(button, 36, 36);
     return button;
 }
 
@@ -4258,13 +4482,25 @@ static void install_css(const WcGtk4WindowConfig *config)
         "window { background: #0e0c16; color: #eee8f5; }"
         ".wc-ribbon { background: #1c1728; border-bottom: 1px solid #3b2d49; }"
         ".wc-ribbon-tabs { padding: 2px 6px 0 6px; }"
-        ".wc-ribbon-tab { min-height: 26px; padding: 2px 12px; border-radius: 3px 3px 0 0; }"
+        ".wc-ribbon-tab { min-height: 22px; padding: 1px 10px; border-radius: 3px 3px 0 0; }"
         ".wc-ribbon-tab-active { background: #34243f; color: #ffb3e3; font-weight: 700; }"
         ".wc-ribbon-groups { padding: 4px 5px 2px 5px; }"
         ".wc-ribbon-group { border-right: 1px solid #43344f; padding: 2px 5px; }"
         ".wc-ribbon-group-label { color: #a9a0b5; font-size: 9px; margin-top: 1px; }"
         ".wc-ribbon-command { min-width: 0; min-height: 0; padding: 3px; font-size: 10px; }"
         ".wc-ribbon-command-compact { padding: 2px; font-size: 9px; }"
+        ".wc-menubar { background: #14101d; border-bottom: 1px solid #2c2238; padding: 0 3px; }"
+        ".wc-menubar > button { min-height: 20px; min-width: 0; padding: 1px 8px; border-radius: 0; font-size: 11px; background: transparent; box-shadow: none; }"
+        ".wc-menubar > button:hover { background: #34243f; }"
+        ".wc-menu-popover { padding: 3px; }"
+        ".wc-file-menu-group { margin: 2px; }"
+        ".wc-file-menu { padding: 2px; }"
+        ".wc-file-menu-item { min-height: 24px; justify-content: start; padding: 2px 10px; font-size: 11px; border-radius: 3px; box-shadow: none; background: transparent; }"
+        ".wc-file-menu-item:hover { background: #34243f; }"
+        ".wc-menu-popover box > button { min-height: 22px; justify-content: start; padding: 2px 12px; font-size: 11px; border-radius: 3px; box-shadow: none; background: transparent; }"
+        ".wc-menu-popover box > button:hover { background: #34243f; }"
+        ".wc-status { padding: 1px 6px; font-size: 10px; }"
+        ".wc-ribbon-search-row { padding: 1px 6px; font-size: 11px; }"
         ".wc-title { font-weight: 800; font-size: 16px; color: #f59bd6; }"
         ".wc-title-compact { font-weight: 800; font-size: 12px; color: #f59bd6; }"
         ".wc-model-name { font-weight: 700; font-size: 13px; color: #eee8f5; }"
@@ -4274,7 +4510,7 @@ static void install_css(const WcGtk4WindowConfig *config)
         ".wc-model-navigator row:selected { background: #34243f; color: #ffd1ee; }"
         ".wc-model-navigator row.wc-tree-descendant-selected { background: #291d35; color: #f4c5e6; }"
         ".wc-nav-rail { background: %s; padding: 5px 3px; border-right: 1px solid #372c44; }"
-        ".wc-rail-button { min-width: 38px; min-height: 38px; padding: 5px; }"
+        ".wc-rail-button { min-width: 34px; min-height: 34px; padding: 4px; }"
         ".wc-tree-row { font-size: 10px; color: #ddd4e5; }"
         ".wc-badge-exact { background: #214a35; color: #b7f5d0; border-radius: 8px; padding: 2px 5px; font-size: 9px; }"
         ".wc-badge-preview { background: #4b3a1d; color: #ffe1a0; border-radius: 8px; padding: 2px 5px; font-size: 9px; }"
@@ -4337,13 +4573,328 @@ static gboolean ribbon_resize_tick_cb(GtkWidget *widget, GdkFrameClock *clock, g
     width = gtk_widget_get_width(state->window);
     if (width <= 0)
         return G_SOURCE_CONTINUE;
+    /* Auto-density may only shrink the ribbon; an explicit View menu
+     * Toggle Compact Ribbon choice wins until it is toggled back. */
     density = width < 820 ? 2 : (width < 1180 ? 1 : 0);
+    if (density < state->ribbon_density)
+        density = state->ribbon_density;
     if (density != state->ribbon_density) {
         state->ribbon_density = density;
         state->window_width_hint = width;
         rebuild_ribbon(state);
     }
     return G_SOURCE_CONTINUE;
+}
+
+
+/* NX-style menu bar. Every entry routes through the same semantic paths as
+ * the ribbon: SCL via submit_command, existing GUI workflows, or honest
+ * disabled controls for planned commands. */
+enum WcMenuAction
+{
+    WC_MENU_NEW_PART = 0, WC_MENU_RUN_JOURNAL, WC_MENU_RUN_SCRIPT,
+    WC_MENU_RECORD_JOURNAL, WC_MENU_SCREENSHOT, WC_MENU_QUIT,
+    WC_MENU_DELETE_FEATURE, WC_MENU_EDIT_FEATURE,
+    WC_MENU_MOVE_UP, WC_MENU_MOVE_DOWN,
+    WC_MENU_FIT_ALL, WC_MENU_FIT_SELECTED, WC_MENU_TOGGLE_COMPACT, WC_MENU_FOCUS_COMMAND,
+    WC_MENU_NEW_SKETCH, WC_MENU_BOX, WC_MENU_CYLINDER, WC_MENU_SPHERE,
+    WC_MENU_DATUM_CSYS, WC_MENU_MASS_PROPERTIES, WC_MENU_ABOUT,
+    WC_MENU_UNDO, WC_MENU_REDO
+};
+
+typedef struct
+{
+    WcGtk4State *state;
+    int action;
+} WcMenuItemData;
+
+static void report_scl_error(WcGtk4State *state, int code, const char *command)
+{
+    const char *detail = NULL;
+    char text[1088];
+    if (state == NULL)
+        return;
+    if (state->callbacks != NULL && state->callbacks->scl_error_text != NULL)
+        detail = state->callbacks->scl_error_text(state->user_data, code);
+    if (detail != NULL && detail[0] != '\0')
+        (void)snprintf(text, sizeof(text), "SCL error %d — %s", code, detail);
+    else
+        (void)snprintf(text, sizeof(text), "SCL error %d", code);
+    gtk_label_set_text(GTK_LABEL(state->command_status), text);
+    {
+        GtkAlertDialog *dialog = gtk_alert_dialog_new(
+            "%s\n\nCommand: %s", text, command != NULL ? command : "(unknown)");
+        gtk_alert_dialog_set_buttons(dialog, (const char *[]){"Close", NULL});
+        gtk_alert_dialog_choose(dialog, GTK_WINDOW(state->window), NULL, NULL, NULL);
+        g_object_unref(dialog);
+    }
+}
+
+static void menu_submit(WcGtk4State *state, const char *command)
+{
+    int status = 1;
+    char message[160];
+    if (state == NULL || command == NULL || state->callbacks == NULL ||
+        state->callbacks->submit_command == NULL)
+        return;
+    {
+        char mutable_command[WC_COMMAND_CAPACITY];
+        (void)snprintf(mutable_command, sizeof(mutable_command), "%s", command);
+        status = state->callbacks->submit_command(state->user_data, mutable_command);
+    }
+    if (status != 0) {
+        report_scl_error(state, status, command);
+        update_status(state);
+        gtk_widget_queue_draw(state->drawing_area);
+        return;
+    }
+    gtk_label_set_text(GTK_LABEL(state->command_status), "Command complete");
+    update_status(state);
+    gtk_widget_queue_draw(state->drawing_area);
+}
+
+static void menu_new_part_response_cb(GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    WcGtk4State *state = (WcGtk4State *)user_data;
+    int button;
+    GError *error = NULL;
+    if (state == NULL || !GTK_IS_ALERT_DIALOG(source))
+        return;
+    button = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(source), result, &error);
+    if (error != NULL) {
+        g_error_free(error);
+        return;
+    }
+    if (button == 1)
+        menu_submit(state, "model(:new_part)");
+}
+
+static void menu_action_clicked_cb(GtkButton *button, gpointer user_data)
+{
+    WcMenuItemData *data = (WcMenuItemData *)user_data;
+    WcGtk4State *state;
+    char command[WC_COMMAND_CAPACITY];
+    (void)button;
+    if (data == NULL || (state = data->state) == NULL)
+        return;
+    switch (data->action) {
+        case WC_MENU_NEW_PART:
+            /* model() reinitialises the part; confirm first to guard data loss. */
+            {
+                GtkAlertDialog *confirm = gtk_alert_dialog_new(
+                    "Start a new part? The current model will be reinitialised.");
+                gtk_alert_dialog_set_buttons(confirm, (const char *[]){"Cancel", "New Part", NULL});
+                gtk_alert_dialog_set_cancel_button(confirm, 0);
+                gtk_alert_dialog_set_default_button(confirm, 0);
+                gtk_alert_dialog_choose(confirm, GTK_WINDOW(state->window), NULL,
+                                        menu_new_part_response_cb, state);
+                g_object_unref(confirm);
+            }
+            break;
+        case WC_MENU_RUN_JOURNAL:
+            open_path_chooser(state, GTK_WINDOW(state->window), NULL,
+                              WC_PATH_CHOOSER_RUN_JOURNAL, "Run Journal",
+                              GTK_FILE_CHOOSER_ACTION_OPEN, "journal", NULL);
+            break;
+        case WC_MENU_RUN_SCRIPT:
+            open_path_chooser(state, GTK_WINDOW(state->window), NULL,
+                              WC_PATH_CHOOSER_RUN_SCRIPT, "Run Script",
+                              GTK_FILE_CHOOSER_ACTION_OPEN, "script", NULL);
+            break;
+        case WC_MENU_RECORD_JOURNAL:
+            open_path_chooser(state, GTK_WINDOW(state->window), NULL,
+                              WC_PATH_CHOOSER_START_JOURNAL, "Record Journal",
+                              GTK_FILE_CHOOSER_ACTION_SAVE, "journal", "model.wjournal");
+            break;
+        case WC_MENU_SCREENSHOT:
+            menu_submit(state, "screenshot(\"waifucad_view.png\")");
+            break;
+        case WC_MENU_QUIT:
+            gtk_window_close(GTK_WINDOW(state->window));
+            break;
+        case WC_MENU_UNDO:
+            menu_submit(state, "undo");
+            break;
+        case WC_MENU_REDO:
+            menu_submit(state, "redo");
+            break;
+        case WC_MENU_DELETE_FEATURE:
+            run_feature_action(state, 0);
+            break;
+        case WC_MENU_EDIT_FEATURE:
+            if (state->selected_feature_id != 0 && state->callbacks != NULL &&
+                state->callbacks->feature_dialogue_for_feature != NULL) {
+                const WcFeatureDialogueDescriptorV1 *dialogue =
+                    state->callbacks->feature_dialogue_for_feature(state->user_data,
+                                                                   state->selected_feature_id);
+                if (dialogue != NULL)
+                    show_feature_dialogue(state, dialogue, state->selected_feature_id);
+                else
+                    gtk_label_set_text(GTK_LABEL(state->command_status),
+                                       "Selected feature has no editable dialogue");
+            } else {
+                gtk_label_set_text(GTK_LABEL(state->command_status),
+                                   "Select a model-history feature first");
+            }
+            break;
+        case WC_MENU_MOVE_UP:
+        case WC_MENU_MOVE_DOWN:
+            if (state->selected_feature_id != 0 && state->selected_feature_name[0] != '\0') {
+                (void)snprintf(command, sizeof(command), "%s(:%s)",
+                               data->action == WC_MENU_MOVE_UP ? "feature_move_up" : "feature_move_down",
+                               state->selected_feature_name);
+                menu_submit(state, command);
+            } else {
+                gtk_label_set_text(GTK_LABEL(state->command_status),
+                                   "Select a model-history feature first");
+            }
+            break;
+        case WC_MENU_FIT_ALL:
+            fit_all(state);
+            break;
+        case WC_MENU_FIT_SELECTED:
+            fit_feature(state, state->selected_feature_id);
+            break;
+        case WC_MENU_TOGGLE_COMPACT:
+            state->ribbon_density = state->ribbon_density == 2 ? 0 : 2;
+            rebuild_ribbon(state);
+            break;
+        case WC_MENU_FOCUS_COMMAND:
+            gtk_widget_grab_focus(state->command_entry);
+            break;
+        case WC_MENU_NEW_SKETCH:
+            begin_new_sketch(state);
+            break;
+        case WC_MENU_BOX:
+            menu_submit(state, "box(:body, 80.mm, 50.mm, 10.mm)");
+            break;
+        case WC_MENU_CYLINDER:
+            menu_submit(state, "cylinder(:body, 20.mm, 40.mm)");
+            break;
+        case WC_MENU_SPHERE:
+            menu_submit(state, "sphere(:body, 25.mm)");
+            break;
+        case WC_MENU_DATUM_CSYS:
+            menu_submit(state, "datum_csys(:new_csys, 0, 0, 0, 1, 0, 0, 0, 1, 0)");
+            break;
+        case WC_MENU_MASS_PROPERTIES:
+            if (state->selected_feature_id != 0)
+                show_mass_properties(state, state->selected_feature_id);
+            else
+                gtk_label_set_text(GTK_LABEL(state->command_status), "Select a feature first");
+            break;
+        case WC_MENU_ABOUT:
+            {
+                char about[768];
+                GtkAlertDialog *dialog;
+                (void)snprintf(about, sizeof(about),
+                               "WaifuCAD — 64-bit-only parametric CAD\nGTK %u.%u.%u\n%s",
+                               gtk_get_major_version(), gtk_get_minor_version(),
+                               gtk_get_micro_version(),
+                               state->gpu.summary[0] != '\0' ? state->gpu.summary
+                                                             : "GPU probe unavailable");
+                dialog = gtk_alert_dialog_new("%s", about);
+                gtk_alert_dialog_set_buttons(dialog, (const char *[]){"Close", NULL});
+                gtk_alert_dialog_choose(dialog, GTK_WINDOW(state->window), NULL, NULL, NULL);
+                g_object_unref(dialog);
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+static GtkWidget *make_menu_item(const char *label, WcGtk4State *state,
+                                 int action, int enabled, const char *tooltip)
+{
+    GtkWidget *button = gtk_button_new_with_label(label);
+    WcMenuItemData *data = g_new0(WcMenuItemData, 1);
+    data->state = state;
+    data->action = action;
+    gtk_widget_set_sensitive(button, enabled != 0);
+    if (tooltip != NULL)
+        gtk_widget_set_tooltip_text(button, tooltip);
+    g_object_set_data_full(G_OBJECT(button), "wc-menu-data", data, g_free);
+    g_signal_connect(button, "clicked", G_CALLBACK(menu_action_clicked_cb), data);
+    return button;
+}
+
+static GtkWidget *make_menu_dropdown(WcGtk4State *state, const char *title,
+                                     GtkWidget **items, size_t count)
+{
+    GtkWidget *button = gtk_menu_button_new();
+    GtkWidget *popover = gtk_popover_new();
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+    size_t i;
+    gtk_menu_button_set_label(GTK_MENU_BUTTON(button), title);
+    gtk_popover_set_child(GTK_POPOVER(popover), box);
+    gtk_widget_add_css_class(popover, "wc-menu-popover");
+    for (i = 0; i < count; ++i)
+        if (items[i] != NULL)
+            gtk_box_append(GTK_BOX(box), items[i]);
+    gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
+    return button;
+}
+
+static GtkWidget *build_menu_bar(WcGtk4State *state)
+{
+    GtkWidget *bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    GtkWidget *file_items[7];
+    GtkWidget *edit_items[6];
+    GtkWidget *view_items[4];
+    GtkWidget *insert_items[5];
+    GtkWidget *tools_items[1];
+    GtkWidget *help_items[1];
+    gtk_widget_add_css_class(bar, "wc-menubar");
+
+    file_items[0] = make_menu_item("New Part…", state, WC_MENU_NEW_PART, 1,
+                                   "Reinitialise the part (asks first)");
+    file_items[1] = make_menu_item("Run Journal…", state, WC_MENU_RUN_JOURNAL, 1, NULL);
+    file_items[2] = make_menu_item("Run Script…", state, WC_MENU_RUN_SCRIPT, 1, NULL);
+    file_items[3] = make_menu_item("Record Journal…", state, WC_MENU_RECORD_JOURNAL, 1, NULL);
+    file_items[4] = make_menu_item("Screenshot", state, WC_MENU_SCREENSHOT, 1, NULL);
+    file_items[5] = make_menu_item("Quit", state, WC_MENU_QUIT, 1, NULL);
+    file_items[6] = NULL;
+
+    edit_items[0] = make_menu_item("Undo", state, WC_MENU_UNDO, 1,
+                                   "Restore the document state before the last edit");
+    edit_items[1] = make_menu_item("Redo", state, WC_MENU_REDO, 1,
+                                   "Re-apply the last undone edit");
+    edit_items[2] = make_menu_item("Edit Feature…", state, WC_MENU_EDIT_FEATURE, 1,
+                                   "Reopen the selected feature's dialogue");
+    edit_items[3] = make_menu_item("Delete Feature", state, WC_MENU_DELETE_FEATURE, 1, NULL);
+    edit_items[4] = make_menu_item("Move Feature Up", state, WC_MENU_MOVE_UP, 1,
+                                   "Reorder within validated dependency order");
+    {
+        GtkWidget *move_down = make_menu_item("Move Feature Down", state, WC_MENU_MOVE_DOWN, 1, NULL);
+        edit_items[5] = move_down;
+    }
+
+    view_items[0] = make_menu_item("Fit All", state, WC_MENU_FIT_ALL, 1, "Shortcut: F");
+    view_items[1] = make_menu_item("Fit Selected", state, WC_MENU_FIT_SELECTED, 1, NULL);
+    view_items[2] = make_menu_item("Toggle Compact Ribbon", state, WC_MENU_TOGGLE_COMPACT, 1, NULL);
+    view_items[3] = make_menu_item("Command Line", state, WC_MENU_FOCUS_COMMAND, 1,
+                                   "Shortcut: Enter");
+
+    insert_items[0] = make_menu_item("Sketch", state, WC_MENU_NEW_SKETCH, 1,
+                                     "Interactive sketch on a datum plane or face");
+    insert_items[1] = make_menu_item("Box", state, WC_MENU_BOX, 1, NULL);
+    insert_items[2] = make_menu_item("Cylinder", state, WC_MENU_CYLINDER, 1, NULL);
+    insert_items[3] = make_menu_item("Sphere", state, WC_MENU_SPHERE, 1, NULL);
+    insert_items[4] = make_menu_item("Datum CSYS", state, WC_MENU_DATUM_CSYS, 1, NULL);
+
+    tools_items[0] = make_menu_item("Mass Properties", state, WC_MENU_MASS_PROPERTIES, 1,
+                                    "Exact volume/area/centre of the selected feature");
+
+    help_items[0] = make_menu_item("About WaifuCAD", state, WC_MENU_ABOUT, 1, NULL);
+
+    gtk_box_append(GTK_BOX(bar), make_menu_dropdown(state, "File", file_items, 6));
+    gtk_box_append(GTK_BOX(bar), make_menu_dropdown(state, "Edit", edit_items, 6));
+    gtk_box_append(GTK_BOX(bar), make_menu_dropdown(state, "View", view_items, 4));
+    gtk_box_append(GTK_BOX(bar), make_menu_dropdown(state, "Insert", insert_items, 5));
+    gtk_box_append(GTK_BOX(bar), make_menu_dropdown(state, "Tools", tools_items, 1));
+    gtk_box_append(GTK_BOX(bar), make_menu_dropdown(state, "Help", help_items, 1));
+    return bar;
 }
 
 int wc_gtk4_native_available(void)
@@ -4359,6 +4910,7 @@ int wc_gtk4_run(const WcGtk4WindowConfig *config,
     GtkWidget *root;
     GtkWidget *ribbon_area;
     GtkWidget *ribbon_left;
+    GtkWidget *tabs_row;
     GtkWidget *workspace;
     GtkWidget *main_paned;
     GtkWidget *navigator_rail;
@@ -4423,6 +4975,9 @@ int wc_gtk4_run(const WcGtk4WindowConfig *config,
     root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_window_set_child(GTK_WINDOW(state.window), root);
 
+    /* NX-style menu bar above the ribbon. */
+    gtk_box_append(GTK_BOX(root), build_menu_bar(&state));
+
     /* Sections and Mods are persistent ribbon tabs; Scripts lives in Home. */
 
     /* Actual contextual ribbon. The nightcore image lives at the ribbon's top-right. */
@@ -4434,10 +4989,40 @@ int wc_gtk4_run(const WcGtk4WindowConfig *config,
     gtk_box_append(GTK_BOX(ribbon_area), ribbon_left);
     state.ribbon_tabs_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
     gtk_widget_add_css_class(state.ribbon_tabs_box, "wc-ribbon-tabs");
-    gtk_box_append(GTK_BOX(ribbon_left), state.ribbon_tabs_box);
+    /* Tab row: contextual tabs expand; the NX-style ribbon command search
+       box sits at the right end. */
+    tabs_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_set_hexpand(state.ribbon_tabs_box, TRUE);
+    gtk_box_append(GTK_BOX(tabs_row), state.ribbon_tabs_box);
+    state.ribbon_search_entry = gtk_search_entry_new();
+    gtk_widget_set_size_request(state.ribbon_search_entry, 190, -1);
+    gtk_widget_set_margin_top(state.ribbon_search_entry, 2);
+    gtk_widget_set_margin_bottom(state.ribbon_search_entry, 2);
+    gtk_widget_set_margin_end(state.ribbon_search_entry, 6);
+    gtk_widget_set_tooltip_text(state.ribbon_search_entry,
+                                "Search every ribbon command across all Sections (Enter runs the top hit)");
+    gtk_box_append(GTK_BOX(tabs_row), state.ribbon_search_entry);
+    gtk_box_append(GTK_BOX(ribbon_left), tabs_row);
+    state.ribbon_search_results = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    gtk_widget_add_css_class(state.ribbon_search_results, "wc-ribbon-search-results");
+    gtk_widget_set_size_request(state.ribbon_search_results, 264, -1);
+    gtk_widget_set_margin_top(state.ribbon_search_results, 4);
+    gtk_widget_set_margin_bottom(state.ribbon_search_results, 4);
+    gtk_widget_set_margin_start(state.ribbon_search_results, 4);
+    gtk_widget_set_margin_end(state.ribbon_search_results, 4);
+    state.ribbon_search_popover = gtk_popover_new();
+    gtk_widget_add_css_class(state.ribbon_search_popover, "wc-ribbon-search-popover");
+    gtk_popover_set_child(GTK_POPOVER(state.ribbon_search_popover), state.ribbon_search_results);
+    gtk_widget_set_parent(state.ribbon_search_popover, state.ribbon_search_entry);
+    g_signal_connect(state.ribbon_search_entry, "search-changed",
+                     G_CALLBACK(ribbon_search_changed_cb), &state);
+    g_signal_connect(state.ribbon_search_entry, "activate",
+                     G_CALLBACK(ribbon_search_activate_cb), &state);
+    g_signal_connect(state.ribbon_search_entry, "stop-search",
+                     G_CALLBACK(ribbon_search_stop_cb), &state);
     state.ribbon_scroller = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(state.ribbon_scroller), GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
-    gtk_widget_set_size_request(state.ribbon_scroller, -1, 112);
+    gtk_widget_set_size_request(state.ribbon_scroller, -1, 68);
     state.ribbon_commands_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
     gtk_widget_add_css_class(state.ribbon_commands_box, "wc-ribbon-groups");
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(state.ribbon_scroller), state.ribbon_commands_box);
@@ -4529,6 +5114,8 @@ int wc_gtk4_run(const WcGtk4WindowConfig *config,
     state.renderer_status = make_label(renderer_text, "wc-subtle");
     gtk_widget_set_hexpand(state.renderer_status, TRUE);
     gtk_box_append(GTK_BOX(status_box), state.renderer_status);
+    state.cursor_status = make_label("—", "wc-subtle");
+    gtk_box_append(GTK_BOX(status_box), state.cursor_status);
     gtk_box_append(GTK_BOX(root), status_box);
 
     rebuild_ribbon(&state);
