@@ -453,11 +453,19 @@ detect_gtk4() {
                 fi
             done
         done
-        dg_libs="-L$dg_libdir -Wl,-R,$dg_libdir -lgtk-4"
-        for dg_name in pangocairo-1.0 pango-1.0 harfbuzz gdk_pixbuf-2.0 cairo-gobject cairo graphene-1.0 gio-2.0 gobject-2.0 glib-2.0; do
-            for dg_lib in "$dg_libdir/lib$dg_name.so"*; do
+        # Link by -l<name> when the unversioned development symlink exists;
+        # otherwise (common on Solaris, where only libfoo.so.1 may be installed)
+        # pass the versioned file by path so ld does not fail with "library not
+        # found". Missing optional libraries are skipped.
+        dg_libs="-L$dg_libdir -Wl,-R,$dg_libdir"
+        for dg_name in gtk-4 pangocairo-1.0 pango-1.0 harfbuzz gdk_pixbuf-2.0 cairo-gobject cairo graphene-1.0 gio-2.0 gobject-2.0 glib-2.0; do
+            if [ -e "$dg_libdir/lib$dg_name.so" ]; then
+                dg_libs="$dg_libs -l$dg_name"
+                continue
+            fi
+            for dg_lib in "$dg_libdir/lib$dg_name.so".*; do
                 if [ -e "$dg_lib" ]; then
-                    dg_libs="$dg_libs -l$dg_name"
+                    dg_libs="$dg_libs $dg_lib"
                     break
                 fi
             done

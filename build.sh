@@ -198,6 +198,10 @@ build_native_gtk4() {
     build_native_gpu_probe
     GTK4_LINK_FLAGS=
     detect_gtk4
+    if [ "${GTK4_FORCE_STUB:-0}" = 1 ]; then
+        WC_HAVE_GTK4=0
+        GTK4_WHY="linking against GTK4 failed (see the linker errors above)"
+    fi
     if [ "$WC_HAVE_GTK4" = 1 ]; then
         # shellcheck disable=SC2086
         "$CC_BIN" ${CFLAGS:-} -std=c11 -Wall -Wextra -fPIC $GTK4_CFLAGS_RAW \
@@ -323,6 +327,47 @@ build_one() {
     esac
 }
 
+link_gtk4_gui() {
+    case "$DC_KIND" in
+        ldc|dmd)
+            # shellcheck disable=SC2086
+            "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} \
+                $COMMON \
+                src/waifucad/gui/frontends/common/frontend.d \
+                src/waifucad/gui/frontends/gtk4/frontend.d \
+                src/apps/waifucad_gui.d \
+                build/obj/wc_threads.o build/obj/wc_temp.o \
+                build/obj/wc_gtk4.o build/obj/wc_gpu_probe.o $SHIM_OBJS \
+                ${LDFLAGS:-} $THREAD_LINK_FLAGS $GTK4_LINK_FLAGS $LIBDL_D_FLAGS $LIBM_D_FLAGS \
+                -of=bin/waifucad-gui
+            ;;
+        gdc)
+            if [ "$GDC_SPLIT" = 1 ]; then
+                GDC_EXTRA_FLAGS=
+                # shellcheck disable=SC2086
+                gdc_link_app bin/waifucad-gui \
+                    src/waifucad/gui/frontends/common/frontend.d \
+                    src/waifucad/gui/frontends/gtk4/frontend.d \
+                    src/apps/waifucad_gui.d \
+                    -- build/obj/wc_threads.o build/obj/wc_temp.o \
+                    build/obj/wc_gtk4.o build/obj/wc_gpu_probe.o \
+                    ${LDFLAGS:-} $THREAD_LINK_FLAGS $GTK4_LINK_FLAGS $LIBDL_RAW $LIBM_RAW
+            else
+            # shellcheck disable=SC2086
+            "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} \
+                $COMMON \
+                src/waifucad/gui/frontends/common/frontend.d \
+                src/waifucad/gui/frontends/gtk4/frontend.d \
+                src/apps/waifucad_gui.d \
+                build/obj/wc_threads.o build/obj/wc_temp.o \
+                build/obj/wc_gtk4.o build/obj/wc_gpu_probe.o \
+                ${LDFLAGS:-} $THREAD_LINK_FLAGS $GTK4_LINK_FLAGS $LIBDL_RAW $LIBM_RAW \
+                -o bin/waifucad-gui
+            fi
+            ;;
+    esac
+}
+
 build_gui() {
     gui_target_os=$(detect_target_os)
     if [ "$gui_target_os" = macos ]; then
@@ -372,44 +417,26 @@ build_gui() {
         return
     fi
     build_native_gtk4
-    case "$DC_KIND" in
-        ldc|dmd)
-            # shellcheck disable=SC2086
-            "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} \
-                $COMMON \
-                src/waifucad/gui/frontends/common/frontend.d \
-                src/waifucad/gui/frontends/gtk4/frontend.d \
-                src/apps/waifucad_gui.d \
-                build/obj/wc_threads.o build/obj/wc_temp.o \
-                build/obj/wc_gtk4.o build/obj/wc_gpu_probe.o $SHIM_OBJS \
-                ${LDFLAGS:-} $THREAD_LINK_FLAGS $GTK4_LINK_FLAGS $LIBDL_D_FLAGS $LIBM_D_FLAGS \
-                -of=bin/waifucad-gui
-            ;;
-        gdc)
-            if [ "$GDC_SPLIT" = 1 ]; then
-                GDC_EXTRA_FLAGS=
-                # shellcheck disable=SC2086
-                gdc_link_app bin/waifucad-gui \
-                    src/waifucad/gui/frontends/common/frontend.d \
-                    src/waifucad/gui/frontends/gtk4/frontend.d \
-                    src/apps/waifucad_gui.d \
-                    -- build/obj/wc_threads.o build/obj/wc_temp.o \
-                    build/obj/wc_gtk4.o build/obj/wc_gpu_probe.o \
-                    ${LDFLAGS:-} $THREAD_LINK_FLAGS $GTK4_LINK_FLAGS $LIBDL_RAW $LIBM_RAW
-            else
-            # shellcheck disable=SC2086
-            "$DC_BIN" $BASE_FLAGS ${DFLAGS:-} \
-                $COMMON \
-                src/waifucad/gui/frontends/common/frontend.d \
-                src/waifucad/gui/frontends/gtk4/frontend.d \
-                src/apps/waifucad_gui.d \
-                build/obj/wc_threads.o build/obj/wc_temp.o \
-                build/obj/wc_gtk4.o build/obj/wc_gpu_probe.o \
-                ${LDFLAGS:-} $THREAD_LINK_FLAGS $GTK4_LINK_FLAGS $LIBDL_RAW $LIBM_RAW \
-                -o bin/waifucad-gui
+    if [ "$WC_HAVE_GTK4" = 1 ]; then
+        # A GTK4 install that compiles but does not link (missing or unversioned
+        # libraries, dependencies in unlisted directories) must not stop the
+        # build: report the linker errors and relink against the stub frontend.
+        # Set WC_GTK4_REQUIRED=1 to make that a hard failure instead.
+        if ! link_gtk4_gui; then
+            if [ "${WC_GTK4_REQUIRED:-0}" = 1 ]; then
+                echo "Linking the GTK4 frontend failed and WC_GTK4_REQUIRED=1 is set." >&2
+                exit 1
             fi
-            ;;
-    esac
+            echo "WARNING: linking against GTK4 failed; building the GUI without the GTK4 frontend." >&2
+            echo "  GTK4 flags used: $GTK4_LINK_FLAGS" >&2
+            echo "  Fix them with GTK4_CFLAGS/GTK4_LIBS (or WC_GTK4_PREFIX) and rebuild." >&2
+            GTK4_FORCE_STUB=1
+            build_native_gtk4
+            link_gtk4_gui
+        fi
+    else
+        link_gtk4_gui
+    fi
 }
 
 build_native_threads
